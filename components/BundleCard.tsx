@@ -75,6 +75,12 @@ export default function BundleCard({ bundle }: { bundle: BundleData }) {
         >
           Purchase via GCash (Messenger)
         </a>
+        <a
+          href="/gallery"
+          className="inline-flex items-center justify-center text-sm font-medium text-accent no-underline hover:text-accent-dim"
+        >
+          View all included models →
+        </a>
       </div>
     </article>
   );
