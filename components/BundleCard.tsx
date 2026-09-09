@@ -4,16 +4,14 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { BundleData } from "@/lib/bundles";
 import { buildMessengerLink } from "@/lib/messenger";
-import { listThumbs, ThumbFile } from "@/lib/thumbs";
+import { listImages, PreviewImage } from "@/lib/previewImages";
 
 export default function BundleCard({ bundle }: { bundle: BundleData }) {
   const link = buildMessengerLink(bundle);
-  const [thumbs, setThumbs] = useState<ThumbFile[]>([]);
+  const [thumbs, setThumbs] = useState<PreviewImage[]>([]);
 
   useEffect(() => {
-    listThumbs(bundle.slug).then((all) => {
-      // Show at most 8 — pick a random sample so the card stays compact even
-      // as more images get uploaded, without needing a "curate" step.
+    listImages(bundle.slug).then((all) => {
       if (all.length <= 8) {
         setThumbs(all);
         return;
@@ -60,8 +58,8 @@ export default function BundleCard({ bundle }: { bundle: BundleData }) {
         {thumbs.length > 0 && (
           <div className="grid grid-cols-4 gap-1.5">
             {thumbs.map((t) => (
-              <div key={t.path} className="relative aspect-square overflow-hidden rounded-md bg-base-800">
-                <Image src={t.url} alt={`Asset preview ${t.index}`} fill className="object-cover" />
+              <div key={t.id} className="relative aspect-square overflow-hidden rounded-md bg-base-800">
+                <Image src={t.url} alt="Asset preview" fill className="object-cover" />
               </div>
             ))}
           </div>

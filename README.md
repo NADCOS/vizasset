@@ -27,6 +27,28 @@ Bundle preview images live in Supabase Storage and get uploaded from `/admin`, n
 6. Add the same three variables in Vercel → Project → Settings → Environment Variables, then redeploy.
 7. Visit `yoursite.com/admin`, enter the passcode, and upload each bundle's hero + thumbnail images.
 
+## Categories, ordering & search
+
+Preview images have categories and a manual sort order, stored in a Supabase table (not just Storage). Create it once via Supabase → SQL Editor → New query:
+
+```sql
+create table if not exists preview_images (
+  id uuid primary key default gen_random_uuid(),
+  slug text not null,
+  path text not null unique,
+  category text not null default 'Uncategorized',
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+alter table preview_images enable row level security;
+create policy "public read" on preview_images for select using (true);
+create policy "anon insert" on preview_images for insert with check (true);
+create policy "anon update" on preview_images for update using (true);
+create policy "anon delete" on preview_images for delete using (true);
+```
+
+On `/admin`, switch the active category tab (or type a new one + Add) before uploading — bulk uploads land in that category. Drag tiles to reorder within a category, or use the per-image dropdown to move it to another category. `/gallery` shows everything grouped by category with a search box that filters the category list.
+
 Note: the passcode is a soft deterrent only (it ships in client JS, like any `NEXT_PUBLIC_*` variable) — it stops casual visitors from finding the page, not a determined one. Fine for a low-stakes internal tool; don't rely on it to gate anything sensitive.
 
 ## Build (static export)
