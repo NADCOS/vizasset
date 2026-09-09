@@ -11,7 +11,16 @@ export default function BundleCard({ bundle }: { bundle: BundleData }) {
   const [thumbs, setThumbs] = useState<ThumbFile[]>([]);
 
   useEffect(() => {
-    listThumbs(bundle.slug).then(setThumbs);
+    listThumbs(bundle.slug).then((all) => {
+      // Show at most 8 — pick a random sample so the card stays compact even
+      // as more images get uploaded, without needing a "curate" step.
+      if (all.length <= 8) {
+        setThumbs(all);
+        return;
+      }
+      const shuffled = [...all].sort(() => Math.random() - 0.5);
+      setThumbs(shuffled.slice(0, 8));
+    });
   }, [bundle.slug]);
 
   return (

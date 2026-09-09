@@ -150,9 +150,23 @@ function BundleRow({ bundle }: { bundle: (typeof staticBundles)[number] }) {
   );
 }
 
+const UNLOCK_KEY = "vz_admin_unlocked";
+
 export default function AdminPage() {
   const [code, setCode] = useState("");
   const [unlocked, setUnlocked] = useState(!PASSCODE);
+
+  useEffect(() => {
+    if (!PASSCODE) return;
+    if (typeof window !== "undefined" && window.localStorage.getItem(UNLOCK_KEY) === PASSCODE) {
+      setUnlocked(true);
+    }
+  }, []);
+
+  function unlock() {
+    setUnlocked(true);
+    if (typeof window !== "undefined") window.localStorage.setItem(UNLOCK_KEY, PASSCODE);
+  }
 
   if (!unlocked) {
     return (
@@ -160,7 +174,7 @@ export default function AdminPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (code === PASSCODE) setUnlocked(true);
+            if (code === PASSCODE) unlock();
           }}
           className="flex w-full max-w-sm flex-col gap-4 rounded-xl2 border border-base-700 bg-base-900 p-8"
         >
