@@ -7,8 +7,6 @@ export interface BundleData {
   format: string;
   heroImage: string;
   highlights: string[];
-  thumbCount: number;
-  thumbs: { src: string; alt: string }[];
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
@@ -16,12 +14,12 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 // Preview images are stored in Supabase Storage (bucket "previews") and
 // uploaded via /admin. Paths have no file extension — content-type is set
 // at upload time — so this URL is stable no matter what file format is used.
-function previewUrl(path: string): string {
+export function previewUrl(path: string): string {
   if (!supabaseUrl) return "/images/bundles/placeholder.jpg";
   return `${supabaseUrl}/storage/v1/object/public/previews/${path}`;
 }
 
-const RAW_BUNDLES: Omit<BundleData, "heroImage" | "thumbs">[] = [
+const RAW_BUNDLES: Omit<BundleData, "heroImage">[] = [
   {
     slug: "all-in-3ds-max",
     name: "All-In 3ds Max Models",
@@ -29,7 +27,6 @@ const RAW_BUNDLES: Omit<BundleData, "heroImage" | "thumbs">[] = [
     originalPriceLabel: "₱1,999",
     badge: "On Sale",
     format: "3ds Max",
-    thumbCount: 8,
     highlights: [
       "2,000+ models — every 3ds Max collection combined",
       "Interiors, furniture & site props",
@@ -42,10 +39,6 @@ const RAW_BUNDLES: Omit<BundleData, "heroImage" | "thumbs">[] = [
 export const bundles: BundleData[] = RAW_BUNDLES.map((b) => ({
   ...b,
   heroImage: previewUrl(`bundles/${b.slug}/hero`),
-  thumbs: Array.from({ length: b.thumbCount }, (_, i) => ({
-    src: previewUrl(`bundles/${b.slug}/thumb-${i + 1}`),
-    alt: `Asset preview ${i + 1}`,
-  })),
 }));
 
 export const faqs = [

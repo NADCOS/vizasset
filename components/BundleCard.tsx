@@ -1,9 +1,18 @@
+"use client";
+
 import Image from "next/image";
+import { useEffect, useState } from "react";
 import { BundleData } from "@/lib/bundles";
 import { buildMessengerLink } from "@/lib/messenger";
+import { listThumbs, ThumbFile } from "@/lib/thumbs";
 
 export default function BundleCard({ bundle }: { bundle: BundleData }) {
   const link = buildMessengerLink(bundle);
+  const [thumbs, setThumbs] = useState<ThumbFile[]>([]);
+
+  useEffect(() => {
+    listThumbs(bundle.slug).then(setThumbs);
+  }, [bundle.slug]);
 
   return (
     <article className="flex flex-col overflow-hidden rounded-xl2 border border-base-700 bg-base-900 shadow-card">
@@ -39,13 +48,15 @@ export default function BundleCard({ bundle }: { bundle: BundleData }) {
           ))}
         </ul>
 
-        <div className="grid grid-cols-4 gap-1.5">
-          {bundle.thumbs.slice(0, 8).map((t) => (
-            <div key={t.src} className="relative aspect-square overflow-hidden rounded-md bg-base-800">
-              <Image src={t.src} alt={t.alt} fill className="object-cover" />
-            </div>
-          ))}
-        </div>
+        {thumbs.length > 0 && (
+          <div className="grid grid-cols-4 gap-1.5">
+            {thumbs.map((t) => (
+              <div key={t.path} className="relative aspect-square overflow-hidden rounded-md bg-base-800">
+                <Image src={t.url} alt={`Asset preview ${t.index}`} fill className="object-cover" />
+              </div>
+            ))}
+          </div>
+        )}
 
         <a
           href={link}
