@@ -11,13 +11,20 @@ export interface PreviewImage {
 }
 
 export async function listImages(slug: string): Promise<PreviewImage[]> {
-  const { data, error } = await supabase
-    .from("preview_images")
-    .select("*")
-    .eq("slug", slug)
-    .order("sort_order", { ascending: true });
-  if (error || !data) return [];
-  return data.map((r: any) => ({ ...r, url: previewUrl(r.path) }));
+  const all: any[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("preview_images")
+      .select("*")
+      .eq("slug", slug)
+      .order("sort_order", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error || !data) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+  }
+  return all.map((r: any) => ({ ...r, url: previewUrl(r.path) }));
 }
 
 export async function uploadImage(slug: string, file: File, category: string, sortOrder: number) {

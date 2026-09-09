@@ -5,6 +5,7 @@ import BundleCard from "@/components/BundleCard";
 import Faq from "@/components/Faq";
 import Footer from "@/components/Footer";
 import LoadingScreen from "@/components/LoadingScreen";
+import BackToTop from "@/components/BackToTop";
 import { bundles } from "@/lib/bundles";
 
 export default function Home() {
@@ -36,6 +37,7 @@ export default function Home() {
 
       <Faq />
       <Footer />
+      <BackToTop />
     </main>
   );
 }

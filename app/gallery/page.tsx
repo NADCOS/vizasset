@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { bundles } from "@/lib/bundles";
 import { listImages, PreviewImage } from "@/lib/previewImages";
+import BackToTop from "@/components/BackToTop";
 
 export default function GalleryPage() {
   const [imagesBySlug, setImagesBySlug] = useState<Record<string, PreviewImage[]>>({});
@@ -97,6 +98,7 @@ export default function GalleryPage() {
           );
         })}
       </div>
+      <BackToTop />
     </main>
   );
 }
