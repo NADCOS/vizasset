@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { bundles as staticBundles } from "@/lib/bundles";
-import { supabase, PREVIEWS_BUCKET } from "@/lib/supabaseClient";
+import { supabase, supabaseConfigured, PREVIEWS_BUCKET } from "@/lib/supabaseClient";
 
 const PASSCODE = process.env.NEXT_PUBLIC_ADMIN_PASSCODE || "";
 
@@ -116,6 +116,11 @@ export default function AdminPage() {
             Storage and appear on the live site immediately — no redeploy needed.
           </p>
         </div>
+        {!supabaseConfigured && (
+          <p className="rounded-lg border border-accent/40 bg-accent/10 px-4 py-3 text-sm text-accent">
+            Supabase environment variables aren&apos;t set yet — add them in Vercel (see README), then redeploy before uploading.
+          </p>
+        )}
         {staticBundles.map((b) => (
           <BundleRow key={b.slug} bundle={b} />
         ))}
