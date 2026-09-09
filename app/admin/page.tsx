@@ -176,7 +176,7 @@ function BundleRow({ bundle }: { bundle: (typeof staticBundles)[number] }) {
     for (const file of files) {
       const { error } = await uploadImage(bundle.slug, file, activeCategory, next);
       if (error) {
-        alert(\`Upload failed: \${error.message || "unknown error"}. Did you run the preview_images SQL setup in Supabase?\`);
+        alert(`Upload failed: ${error.message || "unknown error"}. Did you run the preview_images SQL setup in Supabase?`);
         return;
       }
       next += 1;
