@@ -1,8 +1,21 @@
+"use client";
+
 import Image from "next/image";
+import { useEffect, useState } from "react";
+import { bundles } from "@/lib/bundles";
+import { countImages } from "@/lib/previewImages";
 
 const HEADLINE = "Pro-grade 3D assets for architectural visualizers.".split(" ");
 
 export default function Hero() {
+  const [modelCount, setModelCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    Promise.all(bundles.map((b) => countImages(b.slug))).then((counts) =>
+      setModelCount(counts.reduce((a, b) => a + b, 0))
+    );
+  }, []);
+
   return (
     <section className="relative flex min-h-[85vh] items-end overflow-hidden border-b border-base-700">
       <Image
@@ -26,7 +39,9 @@ export default function Hero() {
           href="#bundles"
           className="mb-5 inline-flex items-center gap-3.5 rounded-full border border-accent bg-[#171b0f] px-5 py-3 no-underline hover:bg-[#1d230f]"
         >
-          <span className="text-sm font-semibold text-base-200">2,000+ Models Bundle</span>
+          <span className="text-sm font-semibold text-base-200">
+            {modelCount && modelCount > 0 ? `${modelCount.toLocaleString()}+ Models Bundle` : "2,000+ Models Bundle"}
+          </span>
           <span className="flex items-baseline gap-2">
             <span className="text-lg text-base-400 line-through">₱1,999</span>
             <span className="animate-price-pop text-4xl font-bold leading-none text-accent">₱299</span>

@@ -50,6 +50,15 @@ export async function reorderCategory(images: PreviewImage[]) {
   );
 }
 
+export async function countImages(slug: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("preview_images")
+    .select("id", { count: "exact", head: true })
+    .eq("slug", slug);
+  if (error || count == null) return 0;
+  return count;
+}
+
 export async function deleteImage(id: string, path: string) {
   await supabase.storage.from(PREVIEWS_BUCKET).remove([path]);
   return supabase.from("preview_images").delete().eq("id", id);
