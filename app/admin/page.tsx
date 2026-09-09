@@ -174,7 +174,11 @@ function BundleRow({ bundle }: { bundle: (typeof staticBundles)[number] }) {
   async function uploadMany(files: File[]) {
     let next = images.length ? Math.max(...images.map((i) => i.sort_order)) + 1 : 0;
     for (const file of files) {
-      await uploadImage(bundle.slug, file, activeCategory, next);
+      const { error } = await uploadImage(bundle.slug, file, activeCategory, next);
+      if (error) {
+        alert(\`Upload failed: \${error.message || "unknown error"}. Did you run the preview_images SQL setup in Supabase?\`);
+        return;
+      }
       next += 1;
     }
     refresh();
