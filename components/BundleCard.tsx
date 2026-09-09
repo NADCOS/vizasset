@@ -24,7 +24,13 @@ export default function BundleCard({ bundle }: { bundle: BundleData }) {
   return (
     <article className="flex flex-col overflow-hidden rounded-xl2 border border-base-700 bg-base-900 shadow-card">
       <div className="relative aspect-[4/3] overflow-hidden">
-        <Image src={bundle.heroImage} alt={bundle.name} fill className="object-cover" />
+        <Image
+          src={bundle.heroImage}
+          alt={bundle.name}
+          fill
+          className="object-cover"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 420px"
+        />
         <span className="absolute left-4 top-4 rounded-full bg-base-950/80 px-3 py-1 text-xs font-medium text-base-200 backdrop-blur">
           {bundle.format}
         </span>
@@ -59,7 +65,14 @@ export default function BundleCard({ bundle }: { bundle: BundleData }) {
           <div className="grid grid-cols-4 gap-1.5">
             {thumbs.map((t) => (
               <div key={t.id} className="relative aspect-square overflow-hidden rounded-md bg-base-800">
-                <Image src={t.url} alt="Asset preview" fill className="object-cover" />
+                <Image
+                  src={t.url}
+                  alt="Asset preview"
+                  fill
+                  loading="lazy"
+                  className="object-cover"
+                  sizes="(max-width: 640px) 25vw, 110px"
+                />
               </div>
             ))}
           </div>

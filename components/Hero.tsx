@@ -17,13 +17,14 @@ export default function Hero() {
   }, []);
 
   return (
-    <section className="relative flex min-h-[85vh] items-end overflow-hidden border-b border-base-700">
+    <section className="relative flex min-h-[60vh] max-h-[720px] items-end overflow-hidden border-b border-base-700 sm:min-h-[75vh]">
       <Image
         src="/images/hero-vray.jpg"
         alt="Photorealistic V-Ray architectural render"
         fill
         priority
-        className="object-cover"
+        sizes="100vw"
+        className="object-cover object-center"
       />
       <div className="absolute inset-0 bg-gradient-to-t from-base-950 via-base-950/60 to-base-950/10" />
 

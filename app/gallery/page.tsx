@@ -90,7 +90,7 @@ export default function GalleryPage() {
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6">
                 {imgs.map((img) => (
                   <div key={img.id} className="relative aspect-square overflow-hidden rounded-lg bg-base-800">
-                    <Image src={img.url} alt={cat} fill className="object-cover" sizes="200px" />
+                    <Image src={img.url} alt={cat} fill loading="lazy" className="object-cover" sizes="(max-width: 640px) 45vw, 180px" />
                   </div>
                 ))}
               </div>
