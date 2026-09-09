@@ -66,7 +66,7 @@ function UploadSlot({ path, label, size, onUploaded }: { path: string; label: st
   );
 }
 
-function AddSlot({ size, onFile }: { size: number; onFile: (file: File) => void }) {
+function AddSlot({ size, onFiles }: { size: number; onFiles: (files: File[]) => void }) {
   const [dragOver, setDragOver] = useState(false);
 
   return (
@@ -78,20 +78,23 @@ function AddSlot({ size, onFile }: { size: number; onFile: (file: File) => void 
       onDrop={(e) => {
         e.preventDefault();
         setDragOver(false);
-        const file = e.dataTransfer.files?.[0];
-        if (file && file.type.startsWith("image/")) onFile(file);
+        const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith("image/"));
+        if (files.length) onFiles(files);
       }}
     >
       <input
         type="file"
         accept="image/*"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) onFile(file);
+          const files = Array.from(e.target.files || []);
+          if (files.length) onFiles(files);
+          e.target.value = "";
         }}
       />
       <span className="text-2xl leading-none">+</span>
+      <span className="mt-1 text-[10px] text-base-500">bulk ok</span>
     </label>
   );
 }
@@ -109,17 +112,19 @@ function BundleRow({ bundle }: { bundle: (typeof staticBundles)[number] }) {
     refresh();
   }, [bundle.slug]);
 
-  const nextIndex = (thumbIndices[thumbIndices.length - 1] || 0) + 1;
-
-  async function uploadNext(file: File) {
-    const path = `bundles/${bundle.slug}/thumb-${nextIndex}`;
+  async function uploadMany(files: File[]) {
+    let next = (thumbIndices[thumbIndices.length - 1] || 0) + 1;
     setAddSize(80);
-    const { error } = await supabase.storage.from(PREVIEWS_BUCKET).upload(path, file, {
-      upsert: true,
-      contentType: file.type,
-      cacheControl: "0",
-    });
-    if (!error) refresh();
+    for (const file of files) {
+      const path = `bundles/${bundle.slug}/thumb-${next}`;
+      await supabase.storage.from(PREVIEWS_BUCKET).upload(path, file, {
+        upsert: true,
+        contentType: file.type,
+        cacheControl: "0",
+      });
+      next += 1;
+    }
+    refresh();
   }
 
   return (
@@ -139,7 +144,7 @@ function BundleRow({ bundle }: { bundle: (typeof staticBundles)[number] }) {
             onUploaded={refresh}
           />
         ))}
-        <AddSlot size={addSize} onFile={uploadNext} />
+        <AddSlot size={addSize} onFiles={uploadMany} />
       </div>
     </section>
   );
