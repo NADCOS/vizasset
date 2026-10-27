@@ -81,6 +81,19 @@ function matchTone(percent) {
   return "bg-base-700 text-base-200";
 }
 
+// Only this site and its Supabase storage may supply an ?imageUrl= to search with.
+function isAllowedImageUrl(value) {
+  try {
+    const url = new URL(value, window.location.origin);
+    return (
+      url.origin === window.location.origin ||
+      (url.protocol === "https:" && url.hostname.endsWith(".supabase.co"))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function getImageFile(fileList) {
   return Array.from(fileList ?? []).find((f) => f.type.startsWith("image/")) ?? null;
 }
@@ -308,6 +321,29 @@ export default function ReverseImageSearch() {
     url.searchParams.delete("image");
     window.history.replaceState(null, "", url);
     takePendingImage().then((file) => file && searchWithFile(file));
+  }, [searchWithFile]);
+
+  // Run an image linked from the gallery (/search?imageUrl=...). Kept in the URL so refresh and Back work.
+  useEffect(() => {
+    const imageUrl = new URLSearchParams(window.location.search).get("imageUrl");
+    if (!imageUrl || !isAllowedImageUrl(imageUrl)) return;
+    let cancelled = false;
+    fetch(imageUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Could not load the gallery image (${res.status})`);
+        return res.blob();
+      })
+      .then((blob) => {
+        if (!cancelled) searchWithFile(new File([blob], "gallery-image", { type: blob.type || "image/jpeg" }));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message);
+        setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [searchWithFile]);
 
   const clearImage = () => {

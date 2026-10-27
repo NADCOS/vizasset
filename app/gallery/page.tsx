@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Search } from "lucide-react";
 import { bundles } from "@/lib/bundles";
 import { listImages, PreviewImage } from "@/lib/previewImages";
 import BackToTop from "@/components/BackToTop";
@@ -47,6 +48,7 @@ export default function GalleryPage() {
           <h1 className="mt-1 text-2xl font-semibold text-base-200 md:text-3xl">Every model in the bundle</h1>
           <p className="mt-2 max-w-xl text-sm text-base-400">
             A full look at what&apos;s included, organized by category — the catalog page only shows a rotating sample.
+            Click any image to find that model and its download link.
           </p>
         </div>
 
@@ -89,9 +91,26 @@ export default function GalleryPage() {
               </h2>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6">
                 {imgs.map((img) => (
-                  <div key={img.id} className="relative aspect-square overflow-hidden rounded-lg bg-base-800">
-                    <Image src={img.url} alt={cat} fill loading="lazy" className="object-cover" sizes="(max-width: 640px) 45vw, 180px" />
-                  </div>
+                  // Opens the image search with this picture, where the matching model's download link is.
+                  <a
+                    key={img.id}
+                    href={`/search?imageUrl=${encodeURIComponent(img.url)}`}
+                    title="Find this model and its download link"
+                    className="group relative block aspect-square overflow-hidden rounded-lg bg-base-800 no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    <Image
+                      src={img.url}
+                      alt={cat}
+                      fill
+                      loading="lazy"
+                      className="object-cover transition-transform duration-300 group-hover:scale-105"
+                      sizes="(max-width: 640px) 45vw, 180px"
+                    />
+                    <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-base-950/85 py-2 text-xs font-semibold text-accent opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                      <Search className="h-3.5 w-3.5" />
+                      Find &amp; download
+                    </span>
+                  </a>
                 ))}
               </div>
             </section>
