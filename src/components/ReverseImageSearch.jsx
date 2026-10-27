@@ -10,6 +10,7 @@ import {
   ImageUp,
   Loader2,
   ScanSearch,
+  Search,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -18,6 +19,18 @@ const LIBRARY_URL = "/indexedLibrary.json";
 const MIN_SCORE_RANGE = [40, 95];
 const DEFAULT_MIN_SCORE = 60;
 const ALL_CATEGORIES = "All";
+const PAGE_SIZE = 60;
+
+// Splits a typed query into lowercase words; an item matches when its title or category contains all of them.
+function queryTokens(text) {
+  return text.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+function matchesText(item, tokens) {
+  if (tokens.length === 0) return true;
+  const haystack = `${item.title} ${item.category}`.toLowerCase();
+  return tokens.every((token) => haystack.includes(token));
+}
 
 // Both vectors are L2-normalized, so the dot product is the cosine similarity.
 function dot(a, b) {
@@ -77,7 +90,8 @@ function StatusBadge({ status, progress, matchCount, error }) {
 
 // forwardRef: AnimatePresence's popLayout mode measures exiting cards through a ref.
 const ResultCard = forwardRef(function ResultCard({ item }, ref) {
-  const percent = Math.round(item.score * 100);
+  // Text-only results have no similarity score.
+  const percent = item.score === undefined ? null : Math.round(item.score * 100);
   return (
     <motion.article
       ref={ref}
@@ -91,11 +105,13 @@ const ResultCard = forwardRef(function ResultCard({ item }, ref) {
       <div className="relative aspect-[4/3] overflow-hidden bg-base-800">
         {/* Plain <img>: previewUrl may be any remote host, not just the ones next/image allows. */}
         <img src={item.previewUrl} alt={item.title} loading="lazy" className="h-full w-full object-cover" />
-        <span
-          className={`absolute right-3 top-3 rounded-full px-3 py-1 text-xs font-semibold shadow ${matchTone(percent)}`}
-        >
-          {percent}% Match
-        </span>
+        {percent !== null && (
+          <span
+            className={`absolute right-3 top-3 rounded-full px-3 py-1 text-xs font-semibold shadow ${matchTone(percent)}`}
+          >
+            {percent}% Match
+          </span>
+        )}
       </div>
       <div className="flex flex-1 flex-col gap-4 p-5">
         <div className="flex flex-col gap-1">
@@ -127,6 +143,8 @@ export default function ReverseImageSearch() {
   const [isDragging, setIsDragging] = useState(false);
   const [minScore, setMinScore] = useState(DEFAULT_MIN_SCORE);
   const [category, setCategory] = useState(ALL_CATEGORIES);
+  const [textQuery, setTextQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const workerRef = useRef(null);
   const engineReadyRef = useRef(false);
@@ -151,6 +169,21 @@ export default function ReverseImageSearch() {
       });
     return () => controller.abort();
   }, []);
+
+  // Pick up a query from the header search box (/search?q=...). Read on mount instead of
+  // useSearchParams so the statically exported page needs no Suspense boundary.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setTextQuery(q);
+  }, []);
+
+  // Keep ?q= in sync so a search can be bookmarked or shared.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (textQuery.trim()) url.searchParams.set("q", textQuery.trim());
+    else url.searchParams.delete("q");
+    window.history.replaceState(null, "", url);
+  }, [textQuery]);
 
   // Start the embedding worker; the model itself loads on the first search.
   useEffect(() => {
@@ -269,23 +302,44 @@ export default function ReverseImageSearch() {
       .sort((a, b) => b.score - a.score);
   }, [library, queryEmbedding]);
 
-  const matches = useMemo(
-    () =>
-      scored.filter(
-        (item) => item.score * 100 >= minScore && (category === ALL_CATEGORIES || item.category === category)
-      ),
-    [scored, minScore, category]
-  );
+  const tokens = useMemo(() => queryTokens(textQuery), [textQuery]);
+  const hasTextQuery = tokens.length > 0;
+
+  // With an image: similarity results, narrowed by any typed words. Without one: a plain name search.
+  const matches = useMemo(() => {
+    const inCategory = (item) => category === ALL_CATEGORIES || item.category === category;
+    if (queryEmbedding) {
+      return scored.filter((item) => item.score * 100 >= minScore && inCategory(item) && matchesText(item, tokens));
+    }
+    if (!hasTextQuery) return [];
+    return library.filter((item) => inCategory(item) && matchesText(item, tokens));
+  }, [scored, library, queryEmbedding, minScore, category, tokens, hasTextQuery]);
+
+  useEffect(() => setVisibleCount(PAGE_SIZE), [matches]);
+
+  const showResults = status === "done" || (!previewUrl && hasTextQuery);
 
   return (
     <section className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 text-base-200">
       <header className="flex flex-col gap-2">
-        <h2 className="text-2xl font-semibold">Reverse Image Search</h2>
+        <h2 className="text-2xl font-semibold">Search the Library</h2>
         <p className="text-sm text-base-400">
-          Drop a render, screenshot or reference photo to find visually similar assets in the library. Images are
+          Search by name, or drop a render, screenshot or reference photo to find visually similar assets. Images are
           analyzed in your browser and never uploaded.
         </p>
       </header>
+
+      <label className="relative block">
+        <span className="sr-only">Search by name or keyword</span>
+        <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-base-400" />
+        <input
+          type="search"
+          value={textQuery}
+          onChange={(e) => setTextQuery(e.target.value)}
+          placeholder={`Search ${library.length > 0 ? `${library.length.toLocaleString()} models` : "models"} by name, e.g. sofa, Minotti, plant`}
+          className="w-full rounded-xl2 border border-base-600 bg-base-900 py-3.5 pl-12 pr-4 text-base text-base-200 placeholder:text-base-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
+        />
+      </label>
 
       {libraryError && (
         <p className="flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
@@ -385,7 +439,7 @@ export default function ReverseImageSearch() {
         <div className="flex items-center gap-2 text-sm font-medium">
           <SlidersHorizontal className="h-4 w-4 text-accent" /> Filters
         </div>
-        <label className="flex flex-col gap-2 text-sm">
+        <label className={`flex flex-col gap-2 text-sm ${queryEmbedding ? "" : "hidden"}`}>
           <span className="flex justify-between">
             <span className="text-base-400">Minimum Similarity Score</span>
             <span className="font-semibold text-accent">{minScore}%</span>
@@ -427,21 +481,42 @@ export default function ReverseImageSearch() {
         )}
       </div>
 
-      {status === "done" && matches.length === 0 && (
-        <p className="rounded-lg border border-base-700 bg-base-900 px-4 py-6 text-center text-sm text-base-400">
-          {library.length === 0
-            ? "The library index is empty. Run npm run index-images to build it."
-            : `No matches above ${minScore}%${category !== ALL_CATEGORIES ? ` in ${category}` : ""}. Try lowering the minimum score.`}
+      {showResults && matches.length > 0 && !queryEmbedding && (
+        <p className="text-sm text-base-400" role="status" aria-live="polite">
+          {matches.length.toLocaleString()} {matches.length === 1 ? "model matches" : "models match"} &ldquo;
+          {textQuery.trim()}&rdquo;{category !== ALL_CATEGORIES ? ` in ${category}` : ""}
         </p>
       )}
 
-      <motion.div layout className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        <AnimatePresence mode="popLayout">
-          {matches.map((item) => (
-            <ResultCard key={item.id} item={item} />
-          ))}
-        </AnimatePresence>
-      </motion.div>
+      {showResults && matches.length === 0 && (
+        <p className="rounded-lg border border-base-700 bg-base-900 px-4 py-6 text-center text-sm text-base-400">
+          {library.length === 0
+            ? "The library index is empty. Run npm run index-images to build it."
+            : queryEmbedding
+              ? `No matches above ${minScore}%${hasTextQuery ? ` for "${textQuery.trim()}"` : ""}${category !== ALL_CATEGORIES ? ` in ${category}` : ""}. Try lowering the minimum score${hasTextQuery ? " or clearing the search box" : ""}.`
+              : `No models named "${textQuery.trim()}"${category !== ALL_CATEGORIES ? ` in ${category}` : ""}. Try a shorter word or another category.`}
+        </p>
+      )}
+
+      {showResults && (
+        <motion.div layout className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <AnimatePresence mode="popLayout">
+            {matches.slice(0, visibleCount).map((item) => (
+              <ResultCard key={item.id} item={item} />
+            ))}
+          </AnimatePresence>
+        </motion.div>
+      )}
+
+      {showResults && matches.length > visibleCount && (
+        <button
+          type="button"
+          onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+          className="mx-auto rounded-lg border border-base-600 px-6 py-2.5 text-sm font-semibold text-base-200 transition-colors hover:border-accent hover:text-accent"
+        >
+          Show more ({(matches.length - visibleCount).toLocaleString()} left)
+        </button>
+      )}
     </section>
   );
 }
