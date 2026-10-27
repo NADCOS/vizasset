@@ -1,0 +1,447 @@
+"use client";
+
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clipboard,
+  Download,
+  ImageUp,
+  Loader2,
+  ScanSearch,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
+
+const LIBRARY_URL = "/indexedLibrary.json";
+const MIN_SCORE_RANGE = [40, 95];
+const DEFAULT_MIN_SCORE = 60;
+const ALL_CATEGORIES = "All";
+
+// Both vectors are L2-normalized, so the dot product is the cosine similarity.
+function dot(a, b) {
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += a[i] * b[i];
+  return sum;
+}
+
+function matchTone(percent) {
+  if (percent >= 85) return "bg-accent text-accent-fg";
+  if (percent >= 70) return "bg-amber-400 text-base-950";
+  return "bg-base-700 text-base-200";
+}
+
+function getImageFile(fileList) {
+  return Array.from(fileList ?? []).find((f) => f.type.startsWith("image/")) ?? null;
+}
+
+function StatusBadge({ status, progress, matchCount, error }) {
+  const config = {
+    idle: { icon: ImageUp, text: "Waiting for an image", tone: "border-base-600 text-base-400" },
+    initializing: {
+      icon: Loader2,
+      spin: true,
+      text: `Initializing AI Engine...${progress > 0 ? ` ${Math.round(progress)}%` : ""}`,
+      tone: "border-amber-400/40 text-amber-300",
+    },
+    analyzing: {
+      icon: ScanSearch,
+      pulse: true,
+      text: "Analyzing Image Structure...",
+      tone: "border-accent/40 text-accent",
+    },
+    done: {
+      icon: CheckCircle2,
+      text: `Found ${matchCount} ${matchCount === 1 ? "Match" : "Matches"}`,
+      tone: "border-accent/40 text-accent",
+    },
+    error: { icon: AlertTriangle, text: error || "Something went wrong", tone: "border-red-500/40 text-red-400" },
+  }[status];
+  const Icon = config.icon;
+
+  return (
+    <motion.span
+      key={status}
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`inline-flex items-center gap-2 rounded-full border bg-base-950/80 px-3 py-1.5 text-xs font-medium backdrop-blur ${config.tone}`}
+      role="status"
+      aria-live="polite"
+    >
+      <Icon className={`h-3.5 w-3.5 ${config.spin ? "animate-spin" : ""} ${config.pulse ? "animate-pulse2" : ""}`} />
+      {config.text}
+    </motion.span>
+  );
+}
+
+// forwardRef: AnimatePresence's popLayout mode measures exiting cards through a ref.
+const ResultCard = forwardRef(function ResultCard({ item }, ref) {
+  const percent = Math.round(item.score * 100);
+  return (
+    <motion.article
+      ref={ref}
+      layout
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      className="flex flex-col overflow-hidden rounded-xl2 border border-base-700 bg-base-900 shadow-card"
+    >
+      <div className="relative aspect-[4/3] overflow-hidden bg-base-800">
+        {/* Plain <img>: previewUrl may be any remote host, not just the ones next/image allows. */}
+        <img src={item.previewUrl} alt={item.title} loading="lazy" className="h-full w-full object-cover" />
+        <span
+          className={`absolute right-3 top-3 rounded-full px-3 py-1 text-xs font-semibold shadow ${matchTone(percent)}`}
+        >
+          {percent}% Match
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col gap-4 p-5">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-base-400">{item.category}</span>
+          <h3 className="text-base font-semibold text-base-200">{item.title}</h3>
+        </div>
+        <a
+          href={item.downloadUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg bg-accent py-2.5 text-sm font-semibold text-accent-fg no-underline transition-colors hover:bg-accent-dim hover:text-accent-fg"
+        >
+          <Download className="h-4 w-4" />
+          Download File
+        </a>
+      </div>
+    </motion.article>
+  );
+});
+
+export default function ReverseImageSearch() {
+  const [library, setLibrary] = useState([]);
+  const [libraryError, setLibraryError] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [queryEmbedding, setQueryEmbedding] = useState(null);
+  const [status, setStatus] = useState("idle");
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [minScore, setMinScore] = useState(DEFAULT_MIN_SCORE);
+  const [category, setCategory] = useState(ALL_CATEGORIES);
+
+  const workerRef = useRef(null);
+  const engineReadyRef = useRef(false);
+  const requestIdRef = useRef(0);
+  const dragDepthRef = useRef(0);
+  const fileInputRef = useRef(null);
+
+  // Load the pre-computed library index.
+  useEffect(() => {
+    const controller = new AbortController();
+    // no-store: the index is rewritten by the library admin while the site is running.
+    fetch(LIBRARY_URL, { signal: controller.signal, cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Could not load library (${res.status})`);
+        return res.json();
+      })
+      .then((items) => {
+        setLibrary(items.filter((item) => Array.isArray(item.embedding) && item.embedding.length > 0));
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") setLibraryError(err.message);
+      });
+    return () => controller.abort();
+  }, []);
+
+  // Start the embedding worker; the model itself loads on the first search.
+  useEffect(() => {
+    const worker = new Worker(new URL("../workers/imageSearchWorker.js", import.meta.url), { type: "module" });
+    workerRef.current = worker;
+
+    worker.onmessage = ({ data }) => {
+      // Ignore replies to searches that a newer image has replaced.
+      if (data.id !== undefined && data.id !== requestIdRef.current) return;
+
+      switch (data.status) {
+        case "downloading_model":
+          if (!engineReadyRef.current) {
+            setStatus("initializing");
+            setProgress(data.progress);
+          }
+          break;
+        case "ready":
+          engineReadyRef.current = true;
+          setStatus("analyzing");
+          break;
+        case "complete":
+          setQueryEmbedding(data.embedding);
+          setStatus("done");
+          break;
+        case "error":
+          setError(data.error);
+          setStatus("error");
+          break;
+      }
+    };
+    worker.onerror = (event) => {
+      setError(event.message || "The AI engine failed to start");
+      setStatus("error");
+    };
+
+    return () => {
+      worker.terminate();
+      workerRef.current = null;
+    };
+  }, []);
+
+  // Release the object URL of the previous preview.
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const searchWithFile = useCallback((file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file");
+      setStatus("error");
+      return;
+    }
+    const id = ++requestIdRef.current;
+    setPreviewUrl(URL.createObjectURL(file));
+    setQueryEmbedding(null);
+    setError(null);
+    setProgress(0);
+    setStatus(engineReadyRef.current ? "analyzing" : "initializing");
+    workerRef.current?.postMessage({ type: "embed", id, image: file });
+  }, []);
+
+  // Ctrl+V anywhere on the page.
+  useEffect(() => {
+    const onPaste = (event) => {
+      const file = getImageFile(event.clipboardData?.files);
+      if (!file) return;
+      event.preventDefault();
+      searchWithFile(file);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [searchWithFile]);
+
+  const clearImage = () => {
+    requestIdRef.current++;
+    setPreviewUrl(null);
+    setQueryEmbedding(null);
+    setError(null);
+    setStatus("idle");
+  };
+
+  const dragHandlers = {
+    onDragEnter: (e) => {
+      e.preventDefault();
+      dragDepthRef.current++;
+      setIsDragging(true);
+    },
+    onDragOver: (e) => e.preventDefault(),
+    onDragLeave: (e) => {
+      e.preventDefault();
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) setIsDragging(false);
+    },
+    onDrop: (e) => {
+      e.preventDefault();
+      dragDepthRef.current = 0;
+      setIsDragging(false);
+      searchWithFile(getImageFile(e.dataTransfer.files));
+    },
+  };
+
+  const categories = useMemo(
+    () => [ALL_CATEGORIES, ...new Set(library.map((item) => item.category).filter(Boolean))],
+    [library]
+  );
+
+  const scored = useMemo(() => {
+    if (!queryEmbedding) return [];
+    return library
+      .filter((item) => item.embedding.length === queryEmbedding.length)
+      .map((item) => ({ ...item, score: dot(queryEmbedding, item.embedding) }))
+      .sort((a, b) => b.score - a.score);
+  }, [library, queryEmbedding]);
+
+  const matches = useMemo(
+    () =>
+      scored.filter(
+        (item) => item.score * 100 >= minScore && (category === ALL_CATEGORIES || item.category === category)
+      ),
+    [scored, minScore, category]
+  );
+
+  return (
+    <section className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 text-base-200">
+      <header className="flex flex-col gap-2">
+        <h2 className="text-2xl font-semibold">Reverse Image Search</h2>
+        <p className="text-sm text-base-400">
+          Drop a render, screenshot or reference photo to find visually similar assets in the library. Images are
+          analyzed in your browser and never uploaded.
+        </p>
+      </header>
+
+      {libraryError && (
+        <p className="flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <AlertTriangle className="h-4 w-4" /> {libraryError}
+        </p>
+      )}
+
+      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div
+          {...dragHandlers}
+          role="button"
+          tabIndex={0}
+          aria-label="Upload an image: drop a file, browse, or paste with Ctrl+V"
+          onClick={() => fileInputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              fileInputRef.current?.click();
+            }
+          }}
+          className={`relative flex min-h-[240px] cursor-pointer flex-col items-center justify-center gap-4 rounded-xl2 border-2 border-dashed p-8 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+            isDragging ? "border-accent bg-accent/10" : "border-base-600 bg-base-900 hover:border-base-400"
+          }`}
+        >
+          <motion.div animate={{ scale: isDragging ? 1.12 : 1 }} className="rounded-full bg-base-800 p-4">
+            <ImageUp className={`h-8 w-8 ${isDragging ? "text-accent" : "text-base-400"}`} />
+          </motion.div>
+          <div className="flex flex-col gap-1">
+            <p className="font-medium">{isDragging ? "Drop to search" : "Drag & drop an image here"}</p>
+            <p className="text-sm text-base-400">
+              or <span className="text-accent underline underline-offset-2">browse files</span>
+            </p>
+          </div>
+          <p className="inline-flex items-center gap-1.5 text-xs text-base-400">
+            <Clipboard className="h-3.5 w-3.5" />
+            Paste a screenshot anywhere with
+            <kbd className="rounded border border-base-600 bg-base-800 px-1.5 py-0.5 font-sans">Ctrl+V</kbd>
+          </p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              searchWithFile(getImageFile(e.target.files));
+              e.target.value = "";
+            }}
+          />
+        </div>
+
+        <div className="relative flex min-h-[240px] items-center justify-center overflow-hidden rounded-xl2 border border-base-700 bg-base-900">
+          <AnimatePresence mode="wait">
+            {previewUrl ? (
+              <motion.img
+                key={previewUrl}
+                src={previewUrl}
+                alt="Your uploaded image"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 h-full w-full object-contain"
+              />
+            ) : (
+              <motion.p key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-base-400">
+                Your image preview will appear here
+              </motion.p>
+            )}
+          </AnimatePresence>
+          {status === "analyzing" && (
+            <motion.div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 h-16 bg-gradient-to-b from-transparent via-accent/25 to-transparent"
+              initial={{ top: "-4rem" }}
+              animate={{ top: "100%" }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
+            />
+          )}
+          <div className="absolute left-3 top-3">
+            <AnimatePresence mode="wait">
+              <StatusBadge status={status} progress={progress} matchCount={matches.length} error={error} />
+            </AnimatePresence>
+          </div>
+          {previewUrl && (
+            <button
+              type="button"
+              onClick={clearImage}
+              aria-label="Remove image"
+              className="absolute right-3 top-3 rounded-full bg-base-950/80 p-1.5 text-base-200 backdrop-blur hover:text-accent"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-5 rounded-xl2 border border-base-700 bg-base-900 p-5">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <SlidersHorizontal className="h-4 w-4 text-accent" /> Filters
+        </div>
+        <label className="flex flex-col gap-2 text-sm">
+          <span className="flex justify-between">
+            <span className="text-base-400">Minimum Similarity Score</span>
+            <span className="font-semibold text-accent">{minScore}%</span>
+          </span>
+          <input
+            type="range"
+            min={MIN_SCORE_RANGE[0]}
+            max={MIN_SCORE_RANGE[1]}
+            step={1}
+            value={minScore}
+            onChange={(e) => setMinScore(Number(e.target.value))}
+            className="w-full accent-[#9BB84A]"
+          />
+        </label>
+        {categories.length > 1 && (
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by category">
+            {categories.map((cat) => {
+              const active = cat === category;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setCategory(cat)}
+                  className="relative rounded-full border border-base-600 px-4 py-1.5 text-sm font-medium transition-colors"
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="active-category-pill"
+                      className="absolute inset-0 rounded-full bg-accent"
+                      transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                    />
+                  )}
+                  <span className={`relative ${active ? "text-accent-fg" : "text-base-200"}`}>{cat}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {status === "done" && matches.length === 0 && (
+        <p className="rounded-lg border border-base-700 bg-base-900 px-4 py-6 text-center text-sm text-base-400">
+          {library.length === 0
+            ? "The library index is empty. Run npm run index-images to build it."
+            : `No matches above ${minScore}%${category !== ALL_CATEGORIES ? ` in ${category}` : ""}. Try lowering the minimum score.`}
+        </p>
+      )}
+
+      <motion.div layout className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <AnimatePresence mode="popLayout">
+          {matches.map((item) => (
+            <ResultCard key={item.id} item={item} />
+          ))}
+        </AnimatePresence>
+      </motion.div>
+    </section>
+  );
+}
