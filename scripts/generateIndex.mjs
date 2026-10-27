@@ -69,11 +69,11 @@ async function main() {
 
   for (const [i, item] of rawLibrary.entries()) {
     const label = `[${i + 1}/${total}]`;
-    const { id, title, category, previewUrl, downloadUrl } = item;
+    const { id, title, category, subcategory, previewUrl, downloadUrl } = item;
     const cached = cache.get(`${id}\n${previewUrl}`);
 
     if (cached) {
-      indexed.push({ id, title, category, previewUrl, downloadUrl, embedding: cached });
+      indexed.push({ id, title, category, subcategory, previewUrl, downloadUrl, embedding: cached });
       skipped++;
       console.log(`${label} Skipped (cached): ${title}`);
       continue;
@@ -84,7 +84,7 @@ async function main() {
       const inputs = await processor(image);
       const { image_embeds } = await model(inputs);
       const embedding = normalizeAndRound(image_embeds.data);
-      indexed.push({ id, title, category, previewUrl, downloadUrl, embedding });
+      indexed.push({ id, title, category, subcategory, previewUrl, downloadUrl, embedding });
       console.log(`${label} Indexed: ${title}`);
     } catch (err) {
       failed++;

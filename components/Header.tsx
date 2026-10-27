@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Search } from "lucide-react";
 import Logo from "./Logo";
+import HeaderSearch from "./HeaderSearch";
 import { buildMessengerLink } from "@/lib/messenger";
 
 export default function Header() {
@@ -12,20 +12,7 @@ export default function Header() {
         <Logo className="h-7 w-7 fill-accent" />
         <span className="hidden text-base font-semibold text-base-200 sm:inline">VizAssets</span>
       </Link>
-      {/* Plain GET form: /search reads ?q= and runs the name search. */}
-      <form action="/search" method="get" role="search" className="relative min-w-0 max-w-md flex-1">
-        <label htmlFor="header-search" className="sr-only">
-          Search models
-        </label>
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-base-400" />
-        <input
-          id="header-search"
-          type="search"
-          name="q"
-          placeholder="Search 3,700+ models…"
-          className="w-full rounded-lg border border-base-600 bg-base-900 py-2 pl-9 pr-3 text-sm text-base-200 placeholder:text-base-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
-        />
-      </form>
+      <HeaderSearch />
       <nav className="flex shrink-0 items-center gap-7 text-sm text-base-400">
         <a href="#bundles" className="hidden text-base-400 no-underline hover:text-base-200 sm:inline">
           Bundles

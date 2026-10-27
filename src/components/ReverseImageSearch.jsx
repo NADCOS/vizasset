@@ -2,8 +2,10 @@
 
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { takePendingImage } from "../lib/pendingImage";
 import {
   AlertTriangle,
+  Camera,
   CheckCircle2,
   Clipboard,
   Download,
@@ -20,16 +22,50 @@ const MIN_SCORE_RANGE = [40, 95];
 const DEFAULT_MIN_SCORE = 60;
 const ALL_CATEGORIES = "All";
 const PAGE_SIZE = 60;
+const SORTS = [
+  { value: "best", label: "Best match" },
+  { value: "az", label: "Name A–Z" },
+  { value: "za", label: "Name Z–A" },
+];
 
-// Splits a typed query into lowercase words; an item matches when its title or category contains all of them.
+// Splits a typed query into lowercase words; an item matches when its title or categories contain all of them.
 function queryTokens(text) {
   return text.toLowerCase().split(/\s+/).filter(Boolean);
 }
 
 function matchesText(item, tokens) {
   if (tokens.length === 0) return true;
-  const haystack = `${item.title} ${item.category}`.toLowerCase();
+  const haystack = `${item.title} ${item.category} ${item.subcategory ?? ""}`.toLowerCase();
   return tokens.every((token) => haystack.includes(token));
+}
+
+// For name searches: titles starting with the query first, then titles containing it, then the rest.
+function textRank(item, phrase) {
+  const title = item.title.toLowerCase();
+  if (title.startsWith(phrase)) return 2;
+  return title.includes(phrase) ? 1 : 0;
+}
+
+// Option list with item counts, most common first.
+function countOptions(values) {
+  const counts = new Map();
+  for (const v of values) if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+function FilterSelect({ label, value, onChange, children }) {
+  return (
+    <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm sm:min-w-[180px]">
+      <span className="text-base-400">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-base-600 bg-base-950 px-3 py-2.5 text-base-200 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
+      >
+        {children}
+      </select>
+    </label>
+  );
 }
 
 // Both vectors are L2-normalized, so the dot product is the cosine similarity.
@@ -115,7 +151,9 @@ const ResultCard = forwardRef(function ResultCard({ item }, ref) {
       </div>
       <div className="flex flex-1 flex-col gap-4 p-5">
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-base-400">{item.category}</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-base-400">
+            {item.subcategory ? `${item.category} · ${item.subcategory}` : item.category}
+          </span>
           <h3 className="text-base font-semibold text-base-200">{item.title}</h3>
         </div>
         <a
@@ -143,6 +181,8 @@ export default function ReverseImageSearch() {
   const [isDragging, setIsDragging] = useState(false);
   const [minScore, setMinScore] = useState(DEFAULT_MIN_SCORE);
   const [category, setCategory] = useState(ALL_CATEGORIES);
+  const [subcategory, setSubcategory] = useState(ALL_CATEGORIES);
+  const [sort, setSort] = useState("best");
   const [textQuery, setTextQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
@@ -261,6 +301,15 @@ export default function ReverseImageSearch() {
     return () => window.removeEventListener("paste", onPaste);
   }, [searchWithFile]);
 
+  // Run an image picked with the header's camera button (/search?image=1).
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("image")) return;
+    url.searchParams.delete("image");
+    window.history.replaceState(null, "", url);
+    takePendingImage().then((file) => file && searchWithFile(file));
+  }, [searchWithFile]);
+
   const clearImage = () => {
     requestIdRef.current++;
     setPreviewUrl(null);
@@ -289,10 +338,19 @@ export default function ReverseImageSearch() {
     },
   };
 
-  const categories = useMemo(
-    () => [ALL_CATEGORIES, ...new Set(library.map((item) => item.category).filter(Boolean))],
-    [library]
+  const categoryOptions = useMemo(() => countOptions(library.map((item) => item.category)), [library]);
+  const subcategoryOptions = useMemo(
+    () =>
+      category === ALL_CATEGORIES
+        ? []
+        : countOptions(library.filter((item) => item.category === category).map((item) => item.subcategory)),
+    [library, category]
   );
+
+  const chooseCategory = (value) => {
+    setCategory(value);
+    setSubcategory(ALL_CATEGORIES);
+  };
 
   const scored = useMemo(() => {
     if (!queryEmbedding) return [];
@@ -307,13 +365,25 @@ export default function ReverseImageSearch() {
 
   // With an image: similarity results, narrowed by any typed words. Without one: a plain name search.
   const matches = useMemo(() => {
-    const inCategory = (item) => category === ALL_CATEGORIES || item.category === category;
+    const inCategory = (item) =>
+      (category === ALL_CATEGORIES || item.category === category) &&
+      (subcategory === ALL_CATEGORIES || item.subcategory === subcategory);
+    let list;
     if (queryEmbedding) {
-      return scored.filter((item) => item.score * 100 >= minScore && inCategory(item) && matchesText(item, tokens));
+      // scored is already sorted by similarity.
+      list = scored.filter((item) => item.score * 100 >= minScore && inCategory(item) && matchesText(item, tokens));
+    } else if (hasTextQuery) {
+      const phrase = textQuery.trim().toLowerCase();
+      list = library
+        .filter((item) => inCategory(item) && matchesText(item, tokens))
+        .sort((a, b) => textRank(b, phrase) - textRank(a, phrase) || a.title.localeCompare(b.title));
+    } else {
+      return [];
     }
-    if (!hasTextQuery) return [];
-    return library.filter((item) => inCategory(item) && matchesText(item, tokens));
-  }, [scored, library, queryEmbedding, minScore, category, tokens, hasTextQuery]);
+    if (sort === "az") return [...list].sort((a, b) => a.title.localeCompare(b.title));
+    if (sort === "za") return [...list].sort((a, b) => b.title.localeCompare(a.title));
+    return list;
+  }, [scored, library, queryEmbedding, minScore, category, subcategory, sort, tokens, hasTextQuery, textQuery]);
 
   useEffect(() => setVisibleCount(PAGE_SIZE), [matches]);
 
@@ -337,8 +407,17 @@ export default function ReverseImageSearch() {
           value={textQuery}
           onChange={(e) => setTextQuery(e.target.value)}
           placeholder={`Search ${library.length > 0 ? `${library.length.toLocaleString()} models` : "models"} by name, e.g. sofa, Minotti, plant`}
-          className="w-full rounded-xl2 border border-base-600 bg-base-900 py-3.5 pl-12 pr-4 text-base text-base-200 placeholder:text-base-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
+          className="w-full rounded-xl2 border border-base-600 bg-base-900 py-3.5 pl-12 pr-14 text-base text-base-200 placeholder:text-base-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40"
         />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          aria-label="Search by image"
+          title="Search by image"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-base-400 transition-colors hover:bg-base-800 hover:text-accent"
+        >
+          <Camera className="h-5 w-5" />
+        </button>
       </label>
 
       {libraryError && (
@@ -454,30 +533,44 @@ export default function ReverseImageSearch() {
             className="w-full accent-[#9BB84A]"
           />
         </label>
-        {categories.length > 1 && (
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by category">
-            {categories.map((cat) => {
-              const active = cat === category;
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => setCategory(cat)}
-                  className="relative rounded-full border border-base-600 px-4 py-1.5 text-sm font-medium transition-colors"
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="active-category-pill"
-                      className="absolute inset-0 rounded-full bg-accent"
-                      transition={{ type: "spring", stiffness: 400, damping: 32 }}
-                    />
-                  )}
-                  <span className={`relative ${active ? "text-accent-fg" : "text-base-200"}`}>{cat}</span>
-                </button>
-              );
-            })}
-          </div>
+        <div className="flex flex-wrap gap-4">
+          <FilterSelect label="Category" value={category} onChange={chooseCategory}>
+            <option value={ALL_CATEGORIES}>All categories ({library.length.toLocaleString()})</option>
+            {categoryOptions.map(([name, count]) => (
+              <option key={name} value={name}>
+                {name} ({count.toLocaleString()})
+              </option>
+            ))}
+          </FilterSelect>
+          {subcategoryOptions.length > 0 && (
+            <FilterSelect label="Type" value={subcategory} onChange={setSubcategory}>
+              <option value={ALL_CATEGORIES}>All {category.toLowerCase()}</option>
+              {subcategoryOptions.map(([name, count]) => (
+                <option key={name} value={name}>
+                  {name} ({count.toLocaleString()})
+                </option>
+              ))}
+            </FilterSelect>
+          )}
+          <FilterSelect label="Sort by" value={sort} onChange={setSort}>
+            {SORTS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </FilterSelect>
+        </div>
+        {(category !== ALL_CATEGORIES || sort !== "best") && (
+          <button
+            type="button"
+            onClick={() => {
+              chooseCategory(ALL_CATEGORIES);
+              setSort("best");
+            }}
+            className="self-start text-sm text-accent underline-offset-2 hover:underline"
+          >
+            Clear filters
+          </button>
         )}
       </div>
 
