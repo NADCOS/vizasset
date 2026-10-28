@@ -5,7 +5,7 @@ import { bundles, previewUrl } from "@/lib/bundles";
 import { adminAuthConfigured, getAdminEmail } from "@/lib/adminAuth";
 import { decodeEmbedding } from "@/lib/embedding";
 import { isDriveLink } from "@/lib/driveLink";
-import { LIBRARY_TABLE, LibraryRow } from "@/lib/library";
+import { LIBRARY_TABLE, LibraryRow, readAllRows } from "@/lib/library";
 import { supabaseAdmin, supabaseAdminConfigured } from "@/lib/supabaseAdmin";
 import { PREVIEWS_BUCKET } from "@/lib/supabaseClient";
 
@@ -98,18 +98,9 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
 
       let categories: [string, number][] | undefined;
       if (offset === 0) {
-        const all: string[] = [];
-        for (let from = 0; ; from += 1000) {
-          const { data: page, error: catErr } = await supabaseAdmin
-            .from(LIBRARY_TABLE)
-            .select("category")
-            .range(from, from + 999);
-          if (catErr) throw catErr;
-          all.push(...(page ?? []).map((r) => r.category));
-          if (!page || page.length < 1000) break;
-        }
+        const rows = await readAllRows<Pick<LibraryRow, "id" | "category">>("id,category");
         const counts = new Map<string, number>();
-        for (const c of all) counts.set(c, (counts.get(c) ?? 0) + 1);
+        for (const { category: c } of rows) counts.set(c, (counts.get(c) ?? 0) + 1);
         categories = Array.from(counts).sort((a, b) => a[0].localeCompare(b[0]));
       }
       return { items: data ?? [], total: count ?? 0, pageSize: LIBRARY_PAGE_SIZE, categories };

@@ -18,6 +18,28 @@ export interface LibraryRow {
   updated_at: string;
 }
 
+const PAGE_SIZE = 1000;
+
+/**
+ * Reads every row, PAGE_SIZE at a time (Supabase caps a response at 1000 rows). Pages continue
+ * after the last id seen rather than at an offset: with offsets, a model added or deleted while
+ * a read is in progress shifts the rows and one at a page boundary gets skipped.
+ */
+export async function readAllRows<T extends { id: string }>(columns: string): Promise<T[]> {
+  const rows: T[] = [];
+  let lastId: string | null = null;
+  for (;;) {
+    let query = supabaseAdmin.from(LIBRARY_TABLE).select(columns).order("id").limit(PAGE_SIZE);
+    if (lastId !== null) query = query.gt("id", lastId);
+    const { data, error } = await query;
+    if (error) throw error;
+    const page = (data ?? []) as unknown as T[];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) return rows;
+    lastId = page[page.length - 1].id;
+  }
+}
+
 /** Changes whenever an item is added, edited or deleted; null if the table can't be read. */
 export async function getLibraryVersion(): Promise<string | null> {
   const [{ count, error: countErr }, { data, error: latestErr }] = await Promise.all([
@@ -29,43 +51,26 @@ export async function getLibraryVersion(): Promise<string | null> {
   return `${count}.${latest}`;
 }
 
-/** Every model for the gallery and home page; empty when Supabase isn't configured or reachable. */
+/** Every model for the gallery and home page, by title; empty when Supabase isn't configured or reachable. */
 export async function getLibraryCards(): Promise<LibraryCard[]> {
-  const cards: LibraryCard[] = [];
-  const pageSize = 1000;
   try {
-    for (let from = 0; ; from += pageSize) {
-      const { data, error } = await supabaseAdmin
-        .from(LIBRARY_TABLE)
-        .select("id,title,category,preview_url")
-        .order("title")
-        .order("id")
-        .range(from, from + pageSize - 1);
-      if (error) throw error;
-      cards.push(...(data ?? []).map((r) => ({ id: r.id, title: r.title, category: r.category, previewUrl: r.preview_url })));
-      if (!data || data.length < pageSize) break;
-    }
+    const rows = await readAllRows<Pick<LibraryRow, "id" | "title" | "category" | "preview_url">>(
+      "id,title,category,preview_url"
+    );
+    return rows
+      .map((r) => ({ id: r.id, title: r.title, category: r.category, previewUrl: r.preview_url }))
+      .sort((a, b) => a.title.localeCompare(b.title));
   } catch (err) {
     console.error("[library] Could not load models:", err);
     return [];
   }
-  return cards;
 }
 
 /** Every item in the shape the search page uses. */
 export async function getLibraryItems() {
-  const rows: Pick<LibraryRow, "id" | "title" | "category" | "subcategory" | "preview_url" | "download_url" | "embedding">[] = [];
-  const pageSize = 1000;
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabaseAdmin
-      .from(LIBRARY_TABLE)
-      .select("id,title,category,subcategory,preview_url,download_url,embedding")
-      .order("id")
-      .range(from, from + pageSize - 1);
-    if (error) throw error;
-    rows.push(...(data ?? []));
-    if (!data || data.length < pageSize) break;
-  }
+  const rows = await readAllRows<
+    Pick<LibraryRow, "id" | "title" | "category" | "subcategory" | "preview_url" | "download_url" | "embedding">
+  >("id,title,category,subcategory,preview_url,download_url,embedding");
   return rows.map((r) => ({
     id: r.id,
     title: r.title,

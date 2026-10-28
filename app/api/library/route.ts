@@ -26,7 +26,12 @@ export async function GET(req: Request) {
   }
 
   const items = await getLibraryItems();
+  // Only cache a snapshot if nothing changed while it was being read; otherwise this copy
+  // could be stored for a year under a version it doesn't match.
+  const stable = (await getLibraryVersion()) === version;
   return NextResponse.json(items, {
-    headers: { "cache-control": "public, max-age=31536000, s-maxage=31536000, immutable" },
+    headers: {
+      "cache-control": stable ? "public, max-age=31536000, s-maxage=31536000, immutable" : "no-store",
+    },
   });
 }
