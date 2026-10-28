@@ -8,12 +8,15 @@ export interface LibraryItem {
   category: string;
   subcategory: string | null;
   preview_url: string;
-  download_url: string;
+  /** null until a Drive link is added; the model is hidden from the site until then. */
+  download_url: string | null;
 }
 
 export interface LibraryPage {
   items: LibraryItem[];
   total: number;
+  /** Models without a Drive link, across the whole library. */
+  missingCount: number;
   pageSize: number;
   categories?: [string, number][];
 }
@@ -58,7 +61,7 @@ export async function uploadHero(slug: string, file: File) {
 
 // ---- Search library ----
 
-export function listLibrary(params: { q?: string; category?: string; offset?: number }) {
+export function listLibrary(params: { q?: string; category?: string; missingLink?: boolean; offset?: number }) {
   return call<LibraryPage>("libraryList", params);
 }
 

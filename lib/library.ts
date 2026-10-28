@@ -12,7 +12,8 @@ export interface LibraryRow {
   subcategory: string | null;
   preview_url: string;
   preview_path: string | null;
-  download_url: string;
+  /** null until a Drive link is added; such models are hidden from the site. */
+  download_url: string | null;
   embedding: string;
   created_at: string;
   updated_at: string;
@@ -25,11 +26,15 @@ const PAGE_SIZE = 1000;
  * after the last id seen rather than at an offset: with offsets, a model added or deleted while
  * a read is in progress shifts the rows and one at a page boundary gets skipped.
  */
-export async function readAllRows<T extends { id: string }>(columns: string): Promise<T[]> {
+export async function readAllRows<T extends { id: string }>(
+  columns: string,
+  { withLinkOnly = false } = {}
+): Promise<T[]> {
   const rows: T[] = [];
   let lastId: string | null = null;
   for (;;) {
     let query = supabaseAdmin.from(LIBRARY_TABLE).select(columns).order("id").limit(PAGE_SIZE);
+    if (withLinkOnly) query = query.not("download_url", "is", null);
     if (lastId !== null) query = query.gt("id", lastId);
     const { data, error } = await query;
     if (error) throw error;
@@ -51,11 +56,15 @@ export async function getLibraryVersion(): Promise<string | null> {
   return `${count}.${latest}`;
 }
 
-/** Every model for the gallery and home page, by title; empty when Supabase isn't configured or reachable. */
+/**
+ * Every model customers can get (has a Drive link) for the gallery and home page, by title;
+ * empty when Supabase isn't configured or reachable.
+ */
 export async function getLibraryCards(): Promise<LibraryCard[]> {
   try {
     const rows = await readAllRows<Pick<LibraryRow, "id" | "title" | "category" | "preview_url">>(
-      "id,title,category,preview_url"
+      "id,title,category,preview_url",
+      { withLinkOnly: true }
     );
     return rows
       .map((r) => ({ id: r.id, title: r.title, category: r.category, previewUrl: r.preview_url }))
@@ -66,11 +75,11 @@ export async function getLibraryCards(): Promise<LibraryCard[]> {
   }
 }
 
-/** Every item in the shape the search page uses. */
+/** Every model with a Drive link, in the shape the search page uses. */
 export async function getLibraryItems() {
   const rows = await readAllRows<
     Pick<LibraryRow, "id" | "title" | "category" | "subcategory" | "preview_url" | "download_url" | "embedding">
-  >("id,title,category,subcategory,preview_url,download_url,embedding");
+  >("id,title,category,subcategory,preview_url,download_url,embedding", { withLinkOnly: true });
   return rows.map((r) => ({
     id: r.id,
     title: r.title,

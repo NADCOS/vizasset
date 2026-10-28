@@ -55,19 +55,25 @@ function FieldInputs({
         <input
           value={value.downloadUrl}
           onChange={set("downloadUrl")}
-          placeholder="Google Drive link"
+          placeholder="Google Drive link (can be added later)"
           inputMode="url"
-          className={`${field} ${problem ? "border-red-500/60" : ""}`}
+          className={`${field} ${problem ? "border-red-500/60" : !value.downloadUrl.trim() ? "border-amber-400/50" : ""}`}
         />
         {problem && <p className="mt-1 text-xs text-red-400">{problem}</p>}
+        {!problem && !value.downloadUrl.trim() && (
+          <p className="mt-1 text-xs text-amber-300">No link yet: saved under &quot;Missing link&quot; and hidden from the site until you add one.</p>
+        )}
       </div>
     </div>
   );
 }
 
-function isComplete(f: LibraryFields) {
-  return Boolean(f.title.trim() && f.category.trim() && isDriveLink(f.downloadUrl));
+// The link is optional (empty = "missing link"), but if one is typed it must be a Drive link.
+function canSave(f: LibraryFields) {
+  return Boolean(f.title.trim() && f.category.trim() && !linkProblem(f.downloadUrl));
 }
+
+const hasLink = (f: LibraryFields) => Boolean(f.downloadUrl.trim());
 
 // ---- Adding new models ----
 
@@ -129,10 +135,10 @@ function AddModels({ prepare, onSaved }: { prepare: Prepare; onSaved: (item: Lib
 
   async function saveAll() {
     // One at a time: the AI model analyzes photos sequentially anyway.
-    for (const d of draftsRef.current.filter((x) => isComplete(x.fields) && !x.saving)) await save(d);
+    for (const d of draftsRef.current.filter((x) => canSave(x.fields) && !x.saving)) await save(d);
   }
 
-  const readyCount = drafts.filter((d) => isComplete(d.fields)).length;
+  const readyCount = drafts.filter((d) => canSave(d.fields)).length;
 
   return (
     <section className="flex flex-col gap-4 rounded-xl2 border border-base-700 bg-base-900 p-6">
@@ -140,7 +146,8 @@ function AddModels({ prepare, onSaved }: { prepare: Prepare; onSaved: (item: Lib
         <div>
           <h2 className="text-lg font-semibold text-base-200">Add new models</h2>
           <p className="mt-1 max-w-xl text-sm text-base-400">
-            Drop photos, fill in a title, category and Drive link for each, then save. New models show up in search within a minute.
+            Drop photos, fill in a title, category and Drive link for each, then save. New models show up on the site within a
+            minute. No link yet? Save anyway; the model waits under &quot;Missing link&quot;, hidden from customers.
           </p>
         </div>
         <label className="flex flex-col gap-1 text-xs text-base-400">
@@ -193,11 +200,11 @@ function AddModels({ prepare, onSaved }: { prepare: Prepare; onSaved: (item: Lib
             <div className="flex gap-2">
               <button
                 onClick={() => save(d)}
-                disabled={!isComplete(d.fields) || d.saving}
+                disabled={!canSave(d.fields) || d.saving}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-accent-fg disabled:opacity-40"
               >
                 {d.saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {d.saving ? "Saving…" : "Save"}
+                {d.saving ? "Saving…" : hasLink(d.fields) ? "Save" : "Save without link"}
               </button>
               <button
                 onClick={() => remove(d.key)}
@@ -231,7 +238,7 @@ function toFields(item: LibraryItem): LibraryFields {
     title: item.title,
     category: item.category,
     subcategory: item.subcategory ?? "",
-    downloadUrl: item.download_url,
+    downloadUrl: item.download_url ?? "",
   };
 }
 
@@ -287,6 +294,11 @@ function ItemRow({
       <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-md bg-base-800">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={item.preview_url} alt={item.title} loading="lazy" className="h-full w-full object-cover" />
+        {!item.download_url && (
+          <span className="absolute inset-x-0 bottom-0 bg-amber-400 py-0.5 text-center text-[10px] font-semibold text-base-950">
+            Missing link
+          </span>
+        )}
         <label
           className="absolute inset-0 flex cursor-pointer items-center justify-center bg-base-950/70 text-[11px] font-medium text-base-200 opacity-0 transition-opacity hover:opacity-100"
           title="Replace photo"
@@ -310,7 +322,7 @@ function ItemRow({
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             onClick={save}
-            disabled={!dirty || !isComplete(fields) || busy !== null}
+            disabled={!dirty || !canSave(fields) || busy !== null}
             className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-1.5 font-semibold text-accent-fg disabled:opacity-40"
           >
             {busy === "save" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -321,14 +333,16 @@ function ItemRow({
               Undo
             </button>
           )}
-          <a
-            href={item.download_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-base-400 no-underline hover:text-accent"
-          >
-            <ExternalLink className="h-3.5 w-3.5" /> Test link
-          </a>
+          {item.download_url && (
+            <a
+              href={item.download_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-base-400 no-underline hover:text-accent"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> Test link
+            </a>
+          )}
           <button
             onClick={() =>
               confirmDelete
@@ -357,6 +371,9 @@ export default function LibraryManager() {
   const [category, setCategory] = useState("");
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [total, setTotal] = useState(0);
+  // "missing" lists only models without a Drive link (hidden from the site until one is added).
+  const [view, setView] = useState<"all" | "missing">("all");
+  const [missingCount, setMissingCount] = useState(0);
   const [categories, setCategories] = useState<[string, number][]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -367,17 +384,18 @@ export default function LibraryManager() {
     setLoading(true);
     setError(null);
     try {
-      const page = await listLibrary({ q, category, offset });
+      const page = await listLibrary({ q, category, offset, missingLink: view === "missing" });
       if (request !== requestRef.current) return;
       setItems((prev) => (offset === 0 ? page.items : [...prev, ...page.items]));
       setTotal(page.total);
+      setMissingCount(page.missingCount);
       if (page.categories) setCategories(page.categories);
     } catch (err) {
       if (request === requestRef.current) setError(errorText(err));
     } finally {
       if (request === requestRef.current) setLoading(false);
     }
-  }, [q, category]);
+  }, [q, category, view]);
 
   // Debounced so typing in the search box doesn't send a request per keystroke.
   useEffect(() => {
@@ -413,19 +431,50 @@ export default function LibraryManager() {
       <AddModels
         prepare={prepare}
         onSaved={(item) => {
+          bumpCategory(item.category, 1);
+          if (!item.download_url) setMissingCount((n) => n + 1);
+          if (view === "missing" && item.download_url) return;
           setItems((prev) => [item, ...prev]);
           setTotal((t) => t + 1);
-          bumpCategory(item.category, 1);
         }}
       />
 
       <section className="flex flex-col gap-4 rounded-xl2 border border-base-700 bg-base-900 p-6">
+        <div className="flex gap-2" role="tablist" aria-label="Which models to show">
+          {(
+            [
+              ["all", "All models", null],
+              ["missing", "Missing link", missingCount],
+            ] as const
+          ).map(([id, label, count]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={view === id}
+              onClick={() => setView(id)}
+              className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium ${
+                view === id ? "border-accent bg-accent/15 text-accent" : "border-base-700 text-base-400 hover:border-base-600 hover:text-base-200"
+              }`}
+            >
+              {label}
+              {count !== null && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${count > 0 ? "bg-amber-400 text-base-950" : "bg-base-700 text-base-400"}`}
+                >
+                  {count.toLocaleString()}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1">
-            <h2 className="text-lg font-semibold text-base-200">Library</h2>
+            <h2 className="text-lg font-semibold text-base-200">{view === "missing" ? "Missing a Drive link" : "Library"}</h2>
             <p className="mt-1 text-sm text-base-400">
-              {total.toLocaleString()} {total === 1 ? "model" : "models"}
-              {q || category ? " match" : " in search"}. Edit a title, category or link and press Save; hover a photo to replace it.
+              {view === "missing"
+                ? `${total.toLocaleString()} ${total === 1 ? "model is" : "models are"} hidden from the site until you paste a Drive link and press Save.`
+                : `${total.toLocaleString()} ${total === 1 ? "model" : "models"}${q || category ? " match" : ""}. Edit a title, category or link and press Save; hover a photo to replace it.`}
             </p>
           </div>
           <label className="relative">
@@ -466,11 +515,21 @@ export default function LibraryManager() {
                   bumpCategory(item.category, -1);
                   bumpCategory(updated.category, 1);
                 }
+                const hadLink = Boolean(item.download_url);
+                const nowHasLink = Boolean(updated.download_url);
+                if (hadLink !== nowHasLink) setMissingCount((n) => n + (nowHasLink ? -1 : 1));
+                // Once a missing model gets its link it's done: drop it from the "Missing link" list.
+                if (view === "missing" && nowHasLink) {
+                  setItems((prev) => prev.filter((i) => i.id !== updated.id));
+                  setTotal((t) => t - 1);
+                  return;
+                }
                 setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
               }}
               onDeleted={() => {
                 setItems((prev) => prev.filter((i) => i.id !== item.id));
                 setTotal((t) => t - 1);
+                if (!item.download_url) setMissingCount((n) => n - 1);
                 bumpCategory(item.category, -1);
               }}
             />
@@ -479,7 +538,11 @@ export default function LibraryManager() {
 
         {!loading && items.length === 0 && !error && (
           <p className="py-6 text-center text-sm text-base-400">
-            {q || category ? "No models match." : "The library is empty. Add models above, or run npm run import-library (see README)."}
+            {view === "missing" && !q && !category
+              ? "Every model has a Drive link."
+              : q || category
+                ? "No models match."
+                : "The library is empty. Add models above, or run npm run import-library (see README)."}
           </p>
         )}
         {loading && <Loader2 className="mx-auto h-5 w-5 animate-spin text-base-400" />}

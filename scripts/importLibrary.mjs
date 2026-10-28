@@ -1,6 +1,8 @@
 // One-time move of public/indexedLibrary.json into the Supabase table library_items, which
-// /admin manages from then on. Safe to re-run: rows are upserted by id. Also applies upload
-// limits to the "previews" bucket.
+// /admin manages from then on. Safe to re-run: models already in the table are left alone
+// (so edits made in /admin are never overwritten); only new ids are added. Models whose link
+// is still "PASTE_LINK_HERE" are imported without a link and show under "Missing link" in
+// /admin. Also applies upload limits to the "previews" bucket.
 //
 //   npm run import-library            import (needs .env.local, see README)
 //   npm run import-library -- --dry   only report what would be imported
@@ -14,6 +16,7 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const indexPath = path.join(rootDir, "public", "indexedLibrary.json");
 const dryRun = process.argv.includes("--dry");
 const BATCH = 500;
+const NO_LINK_YET = "PASTE_LINK_HERE";
 
 function isDriveLink(value) {
   try {
@@ -28,14 +31,16 @@ async function main() {
   const items = JSON.parse(await readFile(indexPath, "utf8"));
   const rows = [];
   const skipped = [];
+  let withoutLink = 0;
   for (const item of items) {
+    const noLinkYet = item.downloadUrl === NO_LINK_YET;
     const reason =
       !item.id || !item.title || !item.previewUrl
         ? "missing id, title or preview"
         : !Array.isArray(item.embedding) || item.embedding.length !== EMBEDDING_DIM
           ? "no embedding"
-          : !isDriveLink(item.downloadUrl ?? "") || item.downloadUrl.includes("REPLACE_WITH")
-            ? `not a real Drive link (${item.downloadUrl})`
+          : !noLinkYet && (!isDriveLink(item.downloadUrl ?? "") || item.downloadUrl.includes("REPLACE_WITH"))
+            ? `sample item with a placeholder link (${item.downloadUrl})`
             : null;
     if (reason) {
       skipped.push(`${item.id ?? "?"} "${item.title ?? ""}": ${reason}`);
@@ -49,12 +54,13 @@ async function main() {
       // Imported photos stay in public/previews on Vercel; only photos uploaded in /admin go to Storage.
       preview_url: item.previewUrl,
       preview_path: null,
-      download_url: item.downloadUrl,
+      download_url: noLinkYet ? null : item.downloadUrl,
       embedding: encodeEmbedding(item.embedding),
     });
+    if (noLinkYet) withoutLink++;
   }
 
-  console.log(`${rows.length} item(s) to import, ${skipped.length} skipped.`);
+  console.log(`${rows.length} item(s) in the file (${withoutLink} without a link yet), ${skipped.length} skipped.`);
   for (const line of skipped) console.log(`  skipped ${line}`);
   if (dryRun) return;
 
@@ -64,11 +70,18 @@ async function main() {
   if (!url || !key) throw new Error("Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local");
   const supabase = createClient(url, key, { auth: { persistSession: false } });
 
+  let added = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
-    const { error } = await supabase.from("library_items").upsert(rows.slice(i, i + BATCH), { onConflict: "id" });
+    // ignoreDuplicates: ids already in the table keep their current (possibly edited) data.
+    const { data, error } = await supabase
+      .from("library_items")
+      .upsert(rows.slice(i, i + BATCH), { onConflict: "id", ignoreDuplicates: true })
+      .select("id");
     if (error) throw new Error(`Import failed at item ${i + 1}: ${error.message}`);
-    console.log(`  imported ${Math.min(i + BATCH, rows.length)}/${rows.length}`);
+    added += data.length;
+    console.log(`  checked ${Math.min(i + BATCH, rows.length)}/${rows.length}`);
   }
+  console.log(`Added ${added} new model(s); ${rows.length - added} were already in the library and left unchanged.`);
 
   // Uploads from /admin: images only, at most 10 MB each.
   const { error: bucketErr } = await supabase.storage.updateBucket("previews", {

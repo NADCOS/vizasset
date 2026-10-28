@@ -34,9 +34,12 @@ function text(value: unknown, field: string, { max = 200, optional = false } = {
   return v;
 }
 
-function driveLink(value: unknown): string {
-  const link = text(value, "Drive link", { max: 2000 })!;
-  if (!isDriveLink(link)) throw new BadRequest("The download link must be a Google Drive link (https://drive.google.com/...)");
+// Empty means "no link yet": the model is saved but stays hidden from the site.
+function driveLinkOrNull(value: unknown): string | null {
+  const link = text(value, "Drive link", { max: 2000, optional: true });
+  if (link && !isDriveLink(link)) {
+    throw new BadRequest("The download link must be a Google Drive link (https://drive.google.com/...)");
+  }
   return link;
 }
 
@@ -93,8 +96,13 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
       if (q) query = query.ilike("title", `%${q}%`);
       const category = text(body.category, "Category", { max: 80, optional: true });
       if (category) query = query.eq("category", category);
-      const { data, count, error } = await query;
+      if (body.missingLink === true) query = query.is("download_url", null);
+      const [{ data, count, error }, { count: missingCount, error: missingErr }] = await Promise.all([
+        query,
+        supabaseAdmin.from(LIBRARY_TABLE).select("id", { count: "exact", head: true }).is("download_url", null),
+      ]);
       if (error) throw error;
+      if (missingErr) throw missingErr;
 
       let categories: [string, number][] | undefined;
       if (offset === 0) {
@@ -103,7 +111,13 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
         for (const { category: c } of rows) counts.set(c, (counts.get(c) ?? 0) + 1);
         categories = Array.from(counts).sort((a, b) => a[0].localeCompare(b[0]));
       }
-      return { items: data ?? [], total: count ?? 0, pageSize: LIBRARY_PAGE_SIZE, categories };
+      return {
+        items: data ?? [],
+        total: count ?? 0,
+        missingCount: missingCount ?? 0,
+        pageSize: LIBRARY_PAGE_SIZE,
+        categories,
+      };
     }
 
     case "libraryCreate": {
@@ -113,7 +127,7 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
         title: text(body.title, "Title"),
         category: text(body.category, "Category", { max: 80 }),
         subcategory: text(body.subcategory, "Type", { max: 80, optional: true }),
-        download_url: driveLink(body.downloadUrl),
+        download_url: driveLinkOrNull(body.downloadUrl),
         preview_path: previewPath,
         preview_url: previewUrl(previewPath),
         embedding: embedding(body.embedding),
@@ -137,7 +151,7 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
       if ("title" in body) changes.title = text(body.title, "Title")!;
       if ("category" in body) changes.category = text(body.category, "Category", { max: 80 })!;
       if ("subcategory" in body) changes.subcategory = text(body.subcategory, "Type", { max: 80, optional: true });
-      if ("downloadUrl" in body) changes.download_url = driveLink(body.downloadUrl);
+      if ("downloadUrl" in body) changes.download_url = driveLinkOrNull(body.downloadUrl);
 
       // A new photo replaces the old one and needs its own embedding so image search still matches.
       let oldPhoto: string | null = null;
