@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Reveal from "@/components/Reveal";
+import Thumb from "@/components/Thumb";
 import { LibraryCard, modelSearchUrl } from "@/lib/models";
 
 const NEW_FOR_DAYS = 14;
@@ -24,13 +25,7 @@ export default function RecentModels({ models, now }: { models: (LibraryCard & {
               className="group flex flex-col gap-2 no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <div className="relative aspect-square overflow-hidden rounded-lg bg-base-800">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={m.previewUrl}
-                  alt={m.title}
-                  loading="lazy"
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                />
+                <Thumb src={m.previewUrl} alt={m.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
                 {isNew && (
                   <span className="absolute left-2 top-2 rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-fg">
                     New

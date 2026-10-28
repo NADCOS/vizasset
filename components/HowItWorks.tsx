@@ -1,6 +1,6 @@
 const STEPS = [
   { n: "01", title: "Browse bundles", body: "Check the included model counts, formats and preview thumbnails." },
-  { n: "02", title: "Message us", body: 'Tap "Purchase via GCash" — it opens Messenger with your order pre-filled. Add the Google email you want to download with.' },
+  { n: "02", title: "Message us", body: 'Tap "Buy via GCash on Messenger" — it opens Messenger with your order pre-filled. Add the Google email you want to download with.' },
   { n: "03", title: "Pay via GCash", body: "Send payment to the GCash number we share in chat." },
   { n: "04", title: "Download from Google Drive", body: "We give your Google email access to the private Drive folder — updated regularly with new models at no extra cost." },
 ];

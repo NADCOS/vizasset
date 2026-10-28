@@ -6,6 +6,7 @@ import { LibraryCard, modelSearchUrl } from "@/lib/models";
 import { loadLibraryNames } from "@/lib/libraryNames";
 import MessengerLink from "./MessengerLink";
 import QuickView from "./QuickView";
+import Thumb from "./Thumb";
 
 const PAGE_SIZE = 60;
 
@@ -25,14 +26,7 @@ function Tile({ model, onOpen }: { model: LibraryCard; onOpen: (m: LibraryCard) 
       }}
       className="group relative block aspect-square overflow-hidden rounded-lg bg-base-800 no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
-      {/* Plain <img>: thousands of model photos would use up Vercel's image optimization quota. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={model.previewUrl}
-        alt={model.title}
-        loading="lazy"
-        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-      />
+      <Thumb src={model.previewUrl} alt={model.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
       <span className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-0.5 bg-base-950/85 px-2 py-2 text-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
         <span className="line-clamp-2 text-xs font-medium text-base-200">{model.title}</span>
         <span className="flex items-center gap-1 text-[11px] font-semibold text-accent">

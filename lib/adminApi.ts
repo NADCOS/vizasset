@@ -72,14 +72,32 @@ export interface LibraryFields {
   downloadUrl: string;
 }
 
-/** A photo ready to save: the shrunk image and its encoded embedding. */
+/** A photo ready to save: the shrunk image, its small thumbnail and its encoded embedding. */
 export interface PreparedPhoto {
   image: Blob;
+  thumb: Blob;
   embedding: string;
 }
 
+/** Uploads the photo and its thumbnail ("<path>-t"); returns the photo's path. */
+async function uploadPhoto(photo: PreparedPhoto) {
+  const path = await uploadFile(photo.image, "library");
+  try {
+    const { path: thumbPath, token } = await call<{ path: string; token: string }>("signUpload", {
+      kind: "libraryThumb",
+      forPath: path,
+    });
+    await supabase.storage
+      .from(PREVIEWS_BUCKET)
+      .uploadToSignedUrl(thumbPath, token, photo.thumb, { contentType: photo.thumb.type, cacheControl: "31536000" });
+  } catch {
+    // Not fatal: the site falls back to the full photo when a thumbnail is missing.
+  }
+  return path;
+}
+
 export async function createLibraryItem(fields: LibraryFields, photo: PreparedPhoto) {
-  const previewPath = await uploadFile(photo.image, "library");
+  const previewPath = await uploadPhoto(photo);
   const { item } = await call<{ item: LibraryItem }>("libraryCreate", {
     ...fields,
     previewPath,
@@ -91,7 +109,7 @@ export async function createLibraryItem(fields: LibraryFields, photo: PreparedPh
 export async function updateLibraryItem(id: string, fields: Partial<LibraryFields>, photo?: PreparedPhoto) {
   const payload: Record<string, unknown> = { id, ...fields };
   if (photo) {
-    payload.previewPath = await uploadFile(photo.image, "library");
+    payload.previewPath = await uploadPhoto(photo);
     payload.embedding = photo.embedding;
   }
   const { item } = await call<{ item: LibraryItem }>("libraryUpdate", payload);

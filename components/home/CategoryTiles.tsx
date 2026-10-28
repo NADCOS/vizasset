@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Reveal from "@/components/Reveal";
+import Thumb from "@/components/Thumb";
 import { categoryGalleryUrl } from "@/lib/models";
 
 export interface CategorySummary {
@@ -28,13 +29,7 @@ export default function CategoryTiles({ categories, total }: { categories: Categ
             href={categoryGalleryUrl(c.name)}
             className="group relative block aspect-[4/5] overflow-hidden rounded-xl2 bg-base-800 no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={c.previewUrl}
-              alt=""
-              loading="lazy"
-              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-            />
+            <Thumb src={c.previewUrl} alt="" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
             <div className="absolute inset-0 bg-gradient-to-t from-base-950 via-base-950/30 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 p-4">
               <p className="text-base font-semibold text-base-200">{c.name}</p>

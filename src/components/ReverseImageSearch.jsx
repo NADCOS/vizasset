@@ -6,6 +6,7 @@ import { takePendingImage } from "../lib/pendingImage";
 import { decodeEmbedding } from "@/lib/embedding";
 import { indexItem, parseQuery, rankByText } from "../lib/textSearch";
 import QuickView from "@/components/QuickView";
+import Thumb from "@/components/Thumb";
 
 const SIMILAR_IN_QUICK_VIEW = 6;
 import {
@@ -169,11 +170,9 @@ const ResultCard = forwardRef(function ResultCard({ item, onOpen }, ref) {
         aria-label={`Quick view: ${item.title}`}
         className="group relative block aspect-[4/3] overflow-hidden bg-base-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
       >
-        {/* Plain <img>: previewUrl may be any remote host, not just the ones next/image allows. */}
-        <img
+        <Thumb
           src={item.previewUrl}
           alt={item.title}
-          loading="lazy"
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
         <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-base-950/80 px-2.5 py-1 text-[11px] font-semibold text-base-200 opacity-0 backdrop-blur transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
@@ -238,6 +237,7 @@ export default function ReverseImageSearch() {
   const [textQuery, setTextQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [quickItem, setQuickItem] = useState(null);
+  const freshLibraryRef = useRef(false);
 
   const workerRef = useRef(null);
   const engineReadyRef = useRef(false);
@@ -271,8 +271,10 @@ export default function ReverseImageSearch() {
     window.history.replaceState(null, "", url);
   }, [textQuery]);
 
-  // Start the embedding worker; the model itself loads on the first search.
-  useEffect(() => {
+  // The embedding worker (~400 KB of script, plus the AI model) starts on the first image
+  // search, so visitors who only search by name never download it.
+  const getWorker = useCallback(() => {
+    if (workerRef.current) return workerRef.current;
     const worker = new Worker(new URL("../workers/imageSearchWorker.js", import.meta.url), { type: "module" });
     workerRef.current = worker;
 
@@ -305,12 +307,16 @@ export default function ReverseImageSearch() {
       setError(event.message || "The AI engine failed to start");
       setStatus("error");
     };
-
-    return () => {
-      worker.terminate();
-      workerRef.current = null;
-    };
+    return worker;
   }, []);
+
+  useEffect(
+    () => () => {
+      workerRef.current?.terminate();
+      workerRef.current = null;
+    },
+    []
+  );
 
   // Release the object URL of the previous preview.
   useEffect(() => {
@@ -332,8 +338,8 @@ export default function ReverseImageSearch() {
     setError(null);
     setProgress(0);
     setStatus(engineReadyRef.current ? "analyzing" : "initializing");
-    workerRef.current?.postMessage({ type: "embed", id, image: file });
-  }, []);
+    getWorker().postMessage({ type: "embed", id, image: file });
+  }, [getWorker]);
 
   // Ctrl+V anywhere on the page.
   useEffect(() => {
@@ -364,7 +370,22 @@ export default function ReverseImageSearch() {
     if (!id || library.length === 0) return;
     const item = library.find((i) => i.id === id);
     if (!item) {
-      setError("That model is no longer in the library");
+      // A model added in the last minute may not be in the cached library yet: fetch the
+      // current version once (the unique URL skips the CDN's cached redirect) before giving up.
+      if (!freshLibraryRef.current) {
+        freshLibraryRef.current = true;
+        const notFound = () => {
+          setError("That model isn't available right now");
+          setStatus("error");
+        };
+        fetch(`${LIBRARY_URL}?fresh=${Date.now()}`)
+          .then((res) => (res.ok ? res.json() : []))
+          // A new library re-runs this effect, which then finds the model or reports it missing.
+          .then((items) => (items.length > 0 ? setLibrary(prepareLibrary(items)) : notFound()))
+          .catch(notFound);
+        return;
+      }
+      setError("That model isn't available right now");
       setStatus("error");
       return;
     }
@@ -783,10 +804,9 @@ export default function ReverseImageSearch() {
                   title={item.title}
                   className="group relative aspect-square overflow-hidden rounded-lg bg-base-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                  <img
+                  <Thumb
                     src={item.previewUrl}
                     alt={item.title}
-                    loading="lazy"
                     className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                   />
                 </button>

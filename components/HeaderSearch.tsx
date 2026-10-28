@@ -6,6 +6,7 @@ import { savePendingImage } from "@/src/lib/pendingImage";
 import { indexItem, parseQuery, rankByText } from "@/src/lib/textSearch";
 import { loadLibraryNames } from "@/lib/libraryNames";
 import { LibraryCard, modelSearchUrl } from "@/lib/models";
+import Thumb from "./Thumb";
 
 const MAX_SUGGESTIONS = 5;
 
@@ -146,8 +147,7 @@ export default function HeaderSearch() {
                 onMouseEnter={() => setActive(i)}
                 className={`flex items-center gap-3 px-3 py-2 no-underline ${active === i ? "bg-base-800" : ""}`}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={m.previewUrl} alt="" className="h-10 w-10 flex-shrink-0 rounded-md bg-base-800 object-cover" />
+                <Thumb src={m.previewUrl} alt="" className="h-10 w-10 flex-shrink-0 rounded-md bg-base-800 object-cover" />
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate text-sm text-base-200">{m.title}</span>
                   <span className="truncate text-xs text-base-400">{m.category}</span>

@@ -52,6 +52,10 @@ function embedding(value: unknown): string {
   return value;
 }
 
+// Each uploaded photo has a small copy next to it (see thumbUrl in lib/models.ts).
+const thumbPath = (photoPath: string) => `${photoPath}-t`;
+const withThumb = (photoPath: string) => [photoPath, thumbPath(photoPath)];
+
 function libraryPhotoPath(value: unknown): string {
   if (typeof value !== "string" || !/^library\/[0-9a-f-]{36}$/.test(value)) throw new BadRequest("Invalid photo");
   return value;
@@ -73,11 +77,12 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
     case "signUpload": {
       let path: string;
       if (body.kind === "library") path = `library/${randomUUID()}`;
+      else if (body.kind === "libraryThumb") path = thumbPath(libraryPhotoPath(body.forPath));
       else if (body.kind === "hero" && isBundleSlug(body.slug)) path = `bundles/${body.slug}/hero`;
       else throw new BadRequest("Unknown upload");
       const { data, error } = await supabaseAdmin.storage
         .from(PREVIEWS_BUCKET)
-        .createSignedUploadUrl(path, { upsert: body.kind === "hero" });
+        .createSignedUploadUrl(path, { upsert: body.kind !== "library" });
       if (error || !data) throw new Error(error?.message || "Could not create upload URL");
       return { path: data.path, token: data.token };
     }
@@ -142,7 +147,7 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
         .select("id,title,category,subcategory,preview_url,download_url")
         .single();
       if (error) {
-        await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove([previewPath]);
+        await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove(withThumb(previewPath));
         throw error;
       }
       refreshModelPages();
@@ -176,7 +181,7 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
         .single();
       if (error) throw error;
       if (oldPhoto && oldPhoto !== changes.preview_path) {
-        await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove([oldPhoto]);
+        await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove(withThumb(oldPhoto));
       }
       refreshModelPages();
       return { item: data };
@@ -188,7 +193,7 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
       const { error } = await supabaseAdmin.from(LIBRARY_TABLE).delete().eq("id", body.id);
       if (error) throw error;
       // Photos uploaded through /admin live in Storage; imported ones are files in public/previews.
-      if (row?.preview_path) await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove([row.preview_path]);
+      if (row?.preview_path) await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove(withThumb(row.preview_path));
       refreshModelPages();
       return {};
     }

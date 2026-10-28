@@ -88,6 +88,14 @@ npm run import-library
 
 This copies `public/indexedLibrary.json` into `library_items` (items without a real Drive link are skipped and listed) and sets upload limits on the `previews` bucket (images only, 10 MB). Imported photos keep being served from `public/previews`. Until the table has rows, `/search` falls back to `public/indexedLibrary.json`; once imported and checked, that file can be deleted. `scripts/libraryAdmin.mjs`, `syncFolder.mjs` and `generateIndex.mjs` only edit the old file — use `/admin` instead.
 
+## Thumbnails
+
+Grids and lists load small WebP thumbnails (~20 KB) instead of the full photos (quick view still shows the full one); see `thumbUrl()` in `lib/models.ts`.
+
+- Photos uploaded in `/admin` get their thumbnail automatically (`<path>-t` in Storage).
+- Photos in `public/previews` have theirs in `public/thumbs`. If you add or replace files there, run `npm run thumbs` (only missing or outdated thumbnails are made). `npm run thumbs -- --uploads` also backfills any `/admin` uploads that lack one.
+- A missing thumbnail falls back to the full photo, so nothing breaks; it's just slower.
+
 ## Analytics
 
 `@vercel/analytics` is included. Enable Web Analytics in Vercel → Project → Analytics. Messenger button clicks are tracked as the custom event `messenger_click`, with a `location` property (`header`, `bundle_card`).

@@ -20,6 +20,11 @@ const nextConfig = {
         ],
       },
       { source: "/admin", headers: [{ key: "Cache-Control", value: "no-store" }] },
+      // Model photos and thumbnails rarely change; by default every visit would re-check each one.
+      ...["/previews/:path*", "/thumbs/:path*", "/images/:path*"].map((source) => ({
+        source,
+        headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
+      })),
     ];
   },
   experimental: {

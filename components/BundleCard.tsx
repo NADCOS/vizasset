@@ -5,6 +5,7 @@ import { BundleData } from "@/lib/bundles";
 import { LibraryCard, modelSearchUrl } from "@/lib/models";
 import { buildMessengerLink } from "@/lib/messenger";
 import MessengerLink from "./MessengerLink";
+import Thumb from "./Thumb";
 
 // One wide panel per bundle: photos on the left, price and the buy button on the right.
 export default function BundleCard({
@@ -47,14 +48,7 @@ export default function BundleCard({
                 title={t.title}
                 className="group relative block aspect-square overflow-hidden rounded-[0.75rem] bg-base-800"
               >
-                {/* Plain <img>: thousands of model photos would use up Vercel's image optimization quota. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={t.previewUrl}
-                  alt={t.title}
-                  loading="lazy"
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                />
+                <Thumb src={t.previewUrl} alt={t.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
               </Link>
             ))}
           </div>

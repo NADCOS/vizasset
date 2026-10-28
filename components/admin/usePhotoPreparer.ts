@@ -5,18 +5,21 @@ import { encodeEmbedding } from "@/lib/embedding";
 import type { PreparedPhoto } from "@/lib/adminApi";
 
 const MAX_SIZE = 1024;
+// The small copy grids and lists load (see thumbUrl in lib/models.ts). Keep in sync with
+// SIZE in scripts/generateThumbs.mjs.
+const THUMB_SIZE = 480;
 
-// Shrinks big renders before upload so previews load fast on the search page.
-async function shrinkImage(file: Blob): Promise<Blob> {
+// Shrinks big renders before upload so photos load fast on the site.
+async function shrinkImage(file: Blob, maxSize: number, quality: number): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_SIZE / Math.max(bitmap.width, bitmap.height));
+  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(bitmap.width * scale);
   canvas.height = Math.round(bitmap.height * scale);
   canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
   return new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not process the image"))), "image/webp", 0.85)
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not process the image"))), "image/webp", quality)
   );
 }
 
@@ -60,13 +63,13 @@ export function usePhotoPreparer() {
 
   const prepare = useCallback(
     async (file: Blob): Promise<PreparedPhoto> => {
-      const image = await shrinkImage(file);
+      const [image, thumb] = await Promise.all([shrinkImage(file, MAX_SIZE, 0.85), shrinkImage(file, THUMB_SIZE, 0.72)]);
       const id = ++nextIdRef.current;
       const vector = await new Promise<number[]>((resolve, reject) => {
         pendingRef.current.set(id, { resolve, reject });
         getWorker().postMessage({ type: "embed", id, image });
       });
-      return { image, embedding: encodeEmbedding(vector) };
+      return { image, thumb, embedding: encodeEmbedding(vector) };
     },
     [getWorker]
   );

@@ -13,6 +13,7 @@ import {
 } from "@/lib/adminApi";
 import { isDriveLink } from "@/lib/driveLink";
 import { usePhotoPreparer } from "./usePhotoPreparer";
+import Thumb from "@/components/Thumb";
 
 const CATEGORY_LIST_ID = "library-categories";
 const field =
@@ -292,8 +293,7 @@ function ItemRow({
   return (
     <div className="flex flex-col gap-3 border-b border-base-700 py-4 sm:flex-row">
       <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-md bg-base-800">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={item.preview_url} alt={item.title} loading="lazy" className="h-full w-full object-cover" />
+        <Thumb src={item.preview_url} alt={item.title} className="h-full w-full object-cover" />
         {!item.download_url && (
           <span className="absolute inset-x-0 bottom-0 bg-amber-400 py-0.5 text-center text-[10px] font-semibold text-base-950">
             Missing link

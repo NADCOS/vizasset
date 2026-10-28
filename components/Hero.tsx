@@ -34,7 +34,7 @@ export default function Hero({ modelCount }: { modelCount: number }) {
           className="mb-5 inline-flex items-center gap-3.5 rounded-full border border-accent bg-[#171b0f] px-5 py-3 no-underline hover:bg-[#1d230f]"
         >
           <span className="text-sm font-semibold text-base-200">
-            {modelCount > 0 ? `${modelCount.toLocaleString()}+ Models Bundle` : "2,000+ Models Bundle"}
+            {modelCount > 0 ? `${modelCount.toLocaleString()} Models Bundle` : "2,000+ Models Bundle"}
           </span>
           <span className="flex items-baseline gap-2">
             {featured.originalPriceLabel && (
