@@ -5,7 +5,8 @@ import { bundles, previewUrl } from "@/lib/bundles";
 import { adminAuthConfigured, getAdminEmail } from "@/lib/adminAuth";
 import { decodeEmbedding } from "@/lib/embedding";
 import { isDriveLink } from "@/lib/driveLink";
-import { LIBRARY_TABLE, LibraryRow, readAllRows } from "@/lib/library";
+import { waitUntil } from "@vercel/functions";
+import { LIBRARY_TABLE, LibraryRow, readAllRows, warmLibraryCache } from "@/lib/library";
 import { supabaseAdmin, supabaseAdminConfigured } from "@/lib/supabaseAdmin";
 import { PREVIEWS_BUCKET } from "@/lib/supabaseClient";
 
@@ -13,6 +14,9 @@ import { PREVIEWS_BUCKET } from "@/lib/supabaseClient";
 // change anything; this route checks that the caller is signed in with an ADMIN_EMAILS
 // account, then writes with the service-role key.
 const LIBRARY_PAGE_SIZE = 60;
+
+// Room for the background library rebuild (warmLibraryCache) that runs after a save.
+export const maxDuration = 60;
 
 class BadRequest extends Error {}
 
@@ -205,7 +209,13 @@ export async function POST(req: Request) {
   if (!body || typeof body.action !== "string") return fail(400, "Missing action");
 
   try {
-    return NextResponse.json(await handle(body.action, body));
+    const result = await handle(body.action, body);
+    // After a change, rebuild the search library's CDN copy in the background so customers
+    // never wait for it. waitUntil keeps the function alive after the response is sent.
+    if (["libraryCreate", "libraryUpdate", "libraryDelete"].includes(body.action)) {
+      waitUntil(warmLibraryCache(new URL(req.url).origin));
+    }
+    return NextResponse.json(result);
   } catch (err) {
     if (err instanceof BadRequest) return fail(400, err.message);
     console.error(`[api/admin] ${body.action} failed for ${email}:`, err);

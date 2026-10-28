@@ -35,7 +35,7 @@ const RAW_BUNDLES: Omit<BundleData, "heroImage" | "priceLabel" | "originalPriceL
     badge: "On Sale",
     format: "3ds Max",
     highlights: [
-      "2,000+ models — every 3ds Max collection combined",
+      "Every 3ds Max collection combined in one download",
       "Interiors, furniture & site props",
       "PBR materials for all assets",
       "Optimized for V-Ray & Corona",

@@ -27,7 +27,7 @@ export default function Header() {
         <MessengerLink
           href={link}
           location="header"
-          className="whitespace-nowrap rounded-lg bg-accent px-4.5 py-2 font-semibold text-accent-fg no-underline hover:bg-accent-dim"
+          className="whitespace-nowrap rounded-lg bg-accent px-4 py-2 font-semibold text-accent-fg no-underline hover:bg-accent-dim"
         >
           Message Us
         </MessengerLink>

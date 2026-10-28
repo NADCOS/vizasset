@@ -1,5 +1,7 @@
 import Image from "next/image";
 import { bundles } from "@/lib/bundles";
+// Static import: Next knows the size and generates a tiny blurred preview shown while it loads.
+import heroImage from "@/public/images/hero-vray.jpg";
 
 const HEADLINE = "Pro-grade 3D assets for architectural visualizers.".split(" ");
 
@@ -9,10 +11,11 @@ export default function Hero({ modelCount }: { modelCount: number }) {
   return (
     <section className="relative flex min-h-[60vh] max-h-[720px] items-end overflow-hidden border-b border-base-700 sm:min-h-[75vh]">
       <Image
-        src="/images/hero-vray.jpg"
+        src={heroImage}
         alt="Photorealistic V-Ray architectural render"
         fill
         priority
+        placeholder="blur"
         sizes="100vw"
         className="object-cover object-center"
       />

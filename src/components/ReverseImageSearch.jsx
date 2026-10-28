@@ -5,6 +5,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { takePendingImage } from "../lib/pendingImage";
 import { decodeEmbedding } from "@/lib/embedding";
 import { indexItem, parseQuery, rankByText } from "../lib/textSearch";
+import QuickView from "@/components/QuickView";
+
+const SIMILAR_IN_QUICK_VIEW = 6;
 import {
   AlertTriangle,
   Camera,
@@ -13,6 +16,7 @@ import {
   Download,
   ImageUp,
   Loader2,
+  Maximize2,
   ScanSearch,
   Search,
   SlidersHorizontal,
@@ -146,7 +150,7 @@ function StatusBadge({ status, progress, matchCount, error }) {
 }
 
 // forwardRef: AnimatePresence's popLayout mode measures exiting cards through a ref.
-const ResultCard = forwardRef(function ResultCard({ item }, ref) {
+const ResultCard = forwardRef(function ResultCard({ item, onOpen }, ref) {
   // Text-only results have no similarity score.
   const percent = item.score === undefined ? null : Math.round(item.score * 100);
   return (
@@ -159,9 +163,22 @@ const ResultCard = forwardRef(function ResultCard({ item }, ref) {
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
       className="flex flex-col overflow-hidden rounded-xl2 border border-base-700 bg-base-900 shadow-card"
     >
-      <div className="relative aspect-[4/3] overflow-hidden bg-base-800">
+      <button
+        type="button"
+        onClick={() => onOpen(item)}
+        aria-label={`Quick view: ${item.title}`}
+        className="group relative block aspect-[4/3] overflow-hidden bg-base-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+      >
         {/* Plain <img>: previewUrl may be any remote host, not just the ones next/image allows. */}
-        <img src={item.previewUrl} alt={item.title} loading="lazy" className="h-full w-full object-cover" />
+        <img
+          src={item.previewUrl}
+          alt={item.title}
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+        />
+        <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-base-950/80 px-2.5 py-1 text-[11px] font-semibold text-base-200 opacity-0 backdrop-blur transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+          <Maximize2 className="h-3 w-3" /> Quick view
+        </span>
         {percent !== null && (
           <span
             className={`absolute right-3 top-3 rounded-full px-3 py-1 text-xs font-semibold shadow ${matchTone(percent)}`}
@@ -169,7 +186,7 @@ const ResultCard = forwardRef(function ResultCard({ item }, ref) {
             {percent}% Match
           </span>
         )}
-      </div>
+      </button>
       <div className="flex flex-1 flex-col gap-4 p-5">
         <div className="flex flex-col gap-1">
           <span className="text-xs font-medium uppercase tracking-wide text-base-400">
@@ -192,13 +209,13 @@ const ResultCard = forwardRef(function ResultCard({ item }, ref) {
   );
 });
 
-function ResultsGrid({ items }) {
+function ResultsGrid({ items, onOpen }) {
   if (items.length === 0) return null;
   return (
     <motion.div layout className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
       <AnimatePresence mode="popLayout">
         {items.map((item) => (
-          <ResultCard key={item.id} item={item} />
+          <ResultCard key={item.id} item={item} onOpen={onOpen} />
         ))}
       </AnimatePresence>
     </motion.div>
@@ -220,6 +237,7 @@ export default function ReverseImageSearch() {
   const [sort, setSort] = useState("best");
   const [textQuery, setTextQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [quickItem, setQuickItem] = useState(null);
 
   const workerRef = useRef(null);
   const engineReadyRef = useRef(false);
@@ -469,6 +487,17 @@ export default function ReverseImageSearch() {
 
   useEffect(() => setVisibleCount(PAGE_SIZE), [matches]);
 
+  // The models that look most like the one in the quick view (same embedding comparison as image search).
+  const quickSimilar = useMemo(() => {
+    if (!quickItem) return [];
+    return library
+      .filter((item) => item.id !== quickItem.id && item.embedding.length === quickItem.embedding.length)
+      .map((item) => ({ item, score: dot(quickItem.embedding, item.embedding) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, SIMILAR_IN_QUICK_VIEW)
+      .map((r) => r.item);
+  }, [library, quickItem]);
+
   // Name search sorted by best match: split the visible results into exact and similar.
   const grouped = !queryEmbedding && sort === "best";
   const exactCount = grouped ? matches.filter((m) => m.exact).length : 0;
@@ -695,18 +724,18 @@ export default function ReverseImageSearch() {
       {showResults &&
         (grouped ? (
           <>
-            <ResultsGrid items={visible.slice(0, exactCount)} />
+            <ResultsGrid items={visible.slice(0, exactCount)} onOpen={setQuickItem} />
             {visible.length > exactCount && (
               <>
                 <h3 className="border-t border-base-700 pt-6 text-sm font-semibold uppercase tracking-wide text-base-400">
                   {exactCount > 0 ? "Similar models" : "Closest models"}
                 </h3>
-                <ResultsGrid items={visible.slice(exactCount)} />
+                <ResultsGrid items={visible.slice(exactCount)} onOpen={setQuickItem} />
               </>
             )}
           </>
         ) : (
-          <ResultsGrid items={visible} />
+          <ResultsGrid items={visible} onOpen={setQuickItem} />
         ))}
 
       {showResults && matches.length > visibleCount && (
@@ -718,6 +747,54 @@ export default function ReverseImageSearch() {
           Show more ({(matches.length - visibleCount).toLocaleString()} left)
         </button>
       )}
+
+      <QuickView
+        open={quickItem !== null}
+        onClose={() => setQuickItem(null)}
+        image={quickItem?.previewUrl ?? ""}
+        title={quickItem?.title ?? ""}
+        subtitle={quickItem ? [quickItem.category, quickItem.subcategory].filter(Boolean).join(" · ") : undefined}
+        actions={
+          quickItem && (
+            <>
+              <a
+                href={quickItem.downloadUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-semibold text-accent-fg no-underline hover:bg-accent-dim hover:text-accent-fg"
+              >
+                <Download className="h-4 w-4" />
+                Open in Google Drive
+              </a>
+              <span className="text-center text-xs text-base-400">Buyers only: sign in with the email you gave us</span>
+            </>
+          )
+        }
+      >
+        {quickSimilar.length > 0 && (
+          <>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-base-400">Looks similar</h3>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              {quickSimilar.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setQuickItem(item)}
+                  title={item.title}
+                  className="group relative aspect-square overflow-hidden rounded-lg bg-base-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  <img
+                    src={item.previewUrl}
+                    alt={item.title}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                  />
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </QuickView>
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { supabaseAdmin, supabaseAdminConfigured } from "@/lib/supabaseAdmin";
 import type { LibraryCard } from "@/lib/models";
 
 // Server-side reads of the search library (table library_items). The table has no public
@@ -62,17 +62,93 @@ export async function getLibraryVersion(): Promise<string | null> {
  */
 export async function getLibraryCards(): Promise<LibraryCard[]> {
   try {
-    const rows = await readAllRows<Pick<LibraryRow, "id" | "title" | "category" | "preview_url">>(
-      "id,title,category,preview_url",
+    const rows = await readAllRows<Pick<LibraryRow, "id" | "title" | "category" | "subcategory" | "preview_url">>(
+      "id,title,category,subcategory,preview_url",
       { withLinkOnly: true }
     );
     return rows
-      .map((r) => ({ id: r.id, title: r.title, category: r.category, previewUrl: r.preview_url }))
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        category: r.category,
+        ...(r.subcategory ? { subcategory: r.subcategory } : {}),
+        previewUrl: r.preview_url,
+      }))
       .sort((a, b) => a.title.localeCompare(b.title));
   } catch (err) {
     console.error("[library] Could not load models:", err);
     return [];
   }
+}
+
+/**
+ * The newest models added through /admin (imported ones all share the import date, so they
+ * don't count as "new"). Empty when there are none yet.
+ */
+export async function getRecentUploads(limit = 8): Promise<(LibraryCard & { createdAt: string })[]> {
+  const { data, error } = await supabaseAdmin
+    .from(LIBRARY_TABLE)
+    .select("id,title,category,preview_url,created_at")
+    .not("download_url", "is", null)
+    .not("preview_path", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[library] Could not load recent models:", error);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    title: r.title,
+    category: r.category,
+    previewUrl: r.preview_url,
+    createdAt: r.created_at,
+  }));
+}
+
+/**
+ * Serves a library snapshot from Vercel's CDN. The bare URL redirects to ?v=<version>; each
+ * versioned URL never changes, so it's cached for a year, and any edit in /admin produces a
+ * new version (picked up within ~30s, the redirect's cache time).
+ */
+export async function versionedLibraryResponse(req: Request, load: () => Promise<unknown[]>): Promise<Response> {
+  const json = (body: unknown, cacheControl: string) =>
+    new Response(JSON.stringify(body), { headers: { "content-type": "application/json", "cache-control": cacheControl } });
+  if (!supabaseAdminConfigured) return json([], "no-store");
+  const version = await getLibraryVersion();
+  // Table missing or empty: the search page falls back to the static index.
+  if (!version || version.startsWith("0.")) return json([], "no-store");
+
+  const url = new URL(req.url);
+  if (url.searchParams.get("v") !== version) {
+    const target = new URL(url.pathname, url.origin);
+    target.searchParams.set("v", version);
+    return new Response(null, {
+      status: 307,
+      headers: { location: target.toString(), "cache-control": "public, max-age=0, s-maxage=30" },
+    });
+  }
+
+  const body = await load();
+  // Only cache a snapshot if nothing changed while it was being read; otherwise this copy
+  // could be stored for a year under a version it doesn't match.
+  const stable = (await getLibraryVersion()) === version;
+  return json(body, stable ? "public, max-age=31536000, s-maxage=31536000, immutable" : "no-store");
+}
+
+/**
+ * Builds the CDN copies of the current library right away, so the first customer after an
+ * edit doesn't wait for the rebuild. Fetches the versioned URLs directly: the bare URLs'
+ * redirect may still point at the old version for up to 30s.
+ */
+export async function warmLibraryCache(origin: string) {
+  const version = await getLibraryVersion();
+  if (!version) return;
+  await Promise.all(
+    ["/api/library", "/api/library/names"].map((path) =>
+      fetch(`${origin}${path}?v=${encodeURIComponent(version)}`).then((res) => res.arrayBuffer())
+    )
+  ).catch((err) => console.error("[library] Cache warm-up failed:", err));
 }
 
 /** Every model with a Drive link, in the shape the search page uses. */
