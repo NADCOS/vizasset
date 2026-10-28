@@ -1,9 +1,10 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { takePendingImage } from "../lib/pendingImage";
 import { decodeEmbedding } from "@/lib/embedding";
+import { indexItem, parseQuery, rankByText } from "../lib/textSearch";
 import {
   AlertTriangle,
   Camera,
@@ -31,24 +32,6 @@ const SORTS = [
   { value: "za", label: "Name Z–A" },
 ];
 
-// Splits a typed query into lowercase words; an item matches when its title or categories contain all of them.
-function queryTokens(text) {
-  return text.toLowerCase().split(/\s+/).filter(Boolean);
-}
-
-function matchesText(item, tokens) {
-  if (tokens.length === 0) return true;
-  const haystack = `${item.title} ${item.category} ${item.subcategory ?? ""}`.toLowerCase();
-  return tokens.every((token) => haystack.includes(token));
-}
-
-// For name searches: titles starting with the query first, then titles containing it, then the rest.
-function textRank(item, phrase) {
-  const title = item.title.toLowerCase();
-  if (title.startsWith(phrase)) return 2;
-  return title.includes(phrase) ? 1 : 0;
-}
-
 // Option list with item counts, most common first.
 function countOptions(values) {
   const counts = new Map();
@@ -72,11 +55,13 @@ function FilterSelect({ label, value, onChange, children }) {
 }
 
 // The API sends embeddings encoded as base64 strings; the static index has plain number arrays.
-function withDecodedEmbeddings(items) {
+// Each item also gets its name-search words, computed once here rather than on every keystroke.
+function prepareLibrary(items) {
   return items
     .map((item) => ({
       ...item,
       embedding: typeof item.embedding === "string" ? decodeEmbedding(item.embedding) : item.embedding,
+      searchIndex: indexItem(item),
     }))
     .filter((item) => item.embedding && item.embedding.length > 0);
 }
@@ -207,6 +192,19 @@ const ResultCard = forwardRef(function ResultCard({ item }, ref) {
   );
 });
 
+function ResultsGrid({ items }) {
+  if (items.length === 0) return null;
+  return (
+    <motion.div layout className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      <AnimatePresence mode="popLayout">
+        {items.map((item) => (
+          <ResultCard key={item.id} item={item} />
+        ))}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 export default function ReverseImageSearch() {
   const [library, setLibrary] = useState([]);
   const [libraryError, setLibraryError] = useState(null);
@@ -233,7 +231,7 @@ export default function ReverseImageSearch() {
   useEffect(() => {
     const controller = new AbortController();
     fetchLibrary(controller.signal)
-      .then((items) => setLibrary(withDecodedEmbeddings(items)))
+      .then((items) => setLibrary(prepareLibrary(items)))
       .catch((err) => {
         if (err.name !== "AbortError") setLibraryError(err.message);
       });
@@ -437,32 +435,44 @@ export default function ReverseImageSearch() {
       .sort((a, b) => b.score - a.score);
   }, [library, queryEmbedding]);
 
-  const tokens = useMemo(() => queryTokens(textQuery), [textQuery]);
-  const hasTextQuery = tokens.length > 0;
+  // Ranking thousands of names takes a few dozen ms; deferring it keeps typing smooth.
+  const deferredQuery = useDeferredValue(textQuery);
+  const parsedQuery = useMemo(() => parseQuery(deferredQuery), [deferredQuery]);
+  const hasTextQuery = textQuery.trim().length > 0;
 
-  // With an image: similarity results, narrowed by any typed words. Without one: a plain name search.
+  // With an image: similarity results, narrowed by any typed words. Without one: a name search
+  // with exact matches (every word) first, then similar names (some of the words, typos, related words).
   const matches = useMemo(() => {
     const inCategory = (item) =>
       (category === ALL_CATEGORIES || item.category === category) &&
       (subcategory === ALL_CATEGORIES || item.subcategory === subcategory);
+    const rank = (items) =>
+      parsedQuery ? rankByText(items.map((item) => ({ item, index: item.searchIndex })), parsedQuery) : [];
     let list;
     if (queryEmbedding) {
       // scored is already sorted by similarity.
-      list = scored.filter((item) => item.score * 100 >= minScore && inCategory(item) && matchesText(item, tokens));
-    } else if (hasTextQuery) {
-      const phrase = textQuery.trim().toLowerCase();
-      list = library
-        .filter((item) => inCategory(item) && matchesText(item, tokens))
-        .sort((a, b) => textRank(b, phrase) - textRank(a, phrase) || a.title.localeCompare(b.title));
+      let candidates = scored.filter((item) => item.score * 100 >= minScore && inCategory(item));
+      if (parsedQuery) {
+        const named = new Set(rank(candidates).map((r) => r.item.id));
+        candidates = candidates.filter((item) => named.has(item.id));
+      }
+      list = candidates;
+    } else if (parsedQuery) {
+      list = rank(library.filter(inCategory)).map((r) => ({ ...r.item, exact: r.exact }));
     } else {
       return [];
     }
     if (sort === "az") return [...list].sort((a, b) => a.title.localeCompare(b.title));
     if (sort === "za") return [...list].sort((a, b) => b.title.localeCompare(a.title));
     return list;
-  }, [scored, library, queryEmbedding, minScore, category, subcategory, sort, tokens, hasTextQuery, textQuery]);
+  }, [scored, library, queryEmbedding, minScore, category, subcategory, sort, parsedQuery]);
 
   useEffect(() => setVisibleCount(PAGE_SIZE), [matches]);
+
+  // Name search sorted by best match: split the visible results into exact and similar.
+  const grouped = !queryEmbedding && sort === "best";
+  const exactCount = grouped ? matches.filter((m) => m.exact).length : 0;
+  const visible = matches.slice(0, visibleCount);
 
   const showResults = status === "done" || (!previewUrl && hasTextQuery);
 
@@ -654,8 +664,21 @@ export default function ReverseImageSearch() {
 
       {showResults && matches.length > 0 && !queryEmbedding && (
         <p className="text-sm text-base-400" role="status" aria-live="polite">
-          {matches.length.toLocaleString()} {matches.length === 1 ? "model matches" : "models match"} &ldquo;
-          {textQuery.trim()}&rdquo;{category !== ALL_CATEGORIES ? ` in ${category}` : ""}
+          {grouped ? (
+            <>
+              {exactCount > 0
+                ? `${exactCount.toLocaleString()} ${exactCount === 1 ? "match" : "matches"}`
+                : "No exact match"}{" "}
+              for &ldquo;{textQuery.trim()}&rdquo;{category !== ALL_CATEGORIES ? ` in ${category}` : ""}
+              {matches.length > exactCount &&
+                ` · ${(matches.length - exactCount).toLocaleString()} similar ${matches.length - exactCount === 1 ? "model" : "models"}`}
+            </>
+          ) : (
+            <>
+              {matches.length.toLocaleString()} {matches.length === 1 ? "model matches" : "models match"} &ldquo;
+              {textQuery.trim()}&rdquo;{category !== ALL_CATEGORIES ? ` in ${category}` : ""}
+            </>
+          )}
         </p>
       )}
 
@@ -669,15 +692,22 @@ export default function ReverseImageSearch() {
         </p>
       )}
 
-      {showResults && (
-        <motion.div layout className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          <AnimatePresence mode="popLayout">
-            {matches.slice(0, visibleCount).map((item) => (
-              <ResultCard key={item.id} item={item} />
-            ))}
-          </AnimatePresence>
-        </motion.div>
-      )}
+      {showResults &&
+        (grouped ? (
+          <>
+            <ResultsGrid items={visible.slice(0, exactCount)} />
+            {visible.length > exactCount && (
+              <>
+                <h3 className="border-t border-base-700 pt-6 text-sm font-semibold uppercase tracking-wide text-base-400">
+                  {exactCount > 0 ? "Similar models" : "Closest models"}
+                </h3>
+                <ResultsGrid items={visible.slice(exactCount)} />
+              </>
+            )}
+          </>
+        ) : (
+          <ResultsGrid items={visible} />
+        ))}
 
       {showResults && matches.length > visibleCount && (
         <button
