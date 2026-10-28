@@ -340,7 +340,26 @@ export default function ReverseImageSearch() {
     takePendingImage().then((file) => file && searchWithFile(file));
   }, [searchWithFile]);
 
-  // Run an image linked from the gallery (/search?imageUrl=...). Kept in the URL so refresh and Back work.
+  // Open one model from the gallery or home page (/search?id=...): use its stored embedding as the
+  // query, so the model itself comes first (100% match) followed by similar ones. Kept in the URL
+  // so refresh and Back work.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (!id || library.length === 0) return;
+    const item = library.find((i) => i.id === id);
+    if (!item) {
+      setError("That model is no longer in the library");
+      setStatus("error");
+      return;
+    }
+    requestIdRef.current++;
+    setPreviewUrl(item.previewUrl);
+    setQueryEmbedding(item.embedding);
+    setError(null);
+    setStatus("done");
+  }, [library]);
+
+  // Run an image linked from older gallery links (/search?imageUrl=...).
   useEffect(() => {
     const imageUrl = new URLSearchParams(window.location.search).get("imageUrl");
     if (!imageUrl || !isAllowedImageUrl(imageUrl)) return;
@@ -365,6 +384,11 @@ export default function ReverseImageSearch() {
 
   const clearImage = () => {
     requestIdRef.current++;
+    // Drop a model or gallery image from the URL so a refresh doesn't bring it back.
+    const url = new URL(window.location.href);
+    url.searchParams.delete("id");
+    url.searchParams.delete("imageUrl");
+    window.history.replaceState(null, "", url);
     setPreviewUrl(null);
     setQueryEmbedding(null);
     setError(null);

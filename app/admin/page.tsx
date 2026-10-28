@@ -6,11 +6,11 @@ import { Loader2, LogOut } from "lucide-react";
 import { supabase, supabaseConfigured } from "@/lib/supabaseClient";
 import { verifyAdmin } from "@/lib/adminApi";
 import LibraryManager from "@/components/admin/LibraryManager";
-import BundlePreviews from "@/components/admin/BundlePreviews";
+import BundleHeroes from "@/components/admin/BundleHeroes";
 
 const TABS = [
   { id: "library", label: "Models & Drive links" },
-  { id: "previews", label: "Bundle preview images" },
+  { id: "heroes", label: "Bundle hero image" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
@@ -144,7 +144,7 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {tab === "library" ? <LibraryManager /> : <BundlePreviews />}
+        {tab === "library" ? <LibraryManager /> : <BundleHeroes />}
       </div>
     </main>
   );

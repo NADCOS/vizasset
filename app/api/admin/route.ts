@@ -9,10 +9,9 @@ import { LIBRARY_TABLE, LibraryRow } from "@/lib/library";
 import { supabaseAdmin, supabaseAdminConfigured } from "@/lib/supabaseAdmin";
 import { PREVIEWS_BUCKET } from "@/lib/supabaseClient";
 
-// All /admin writes go through here. The browser only holds the public anon key, which can
-// read preview images but not change anything; this route checks that the caller is signed
-// in with an ADMIN_EMAILS account, then writes with the service-role key.
-const PREVIEWS_TABLE = "preview_images";
+// All /admin writes go through here. The browser only holds the public anon key, which can't
+// change anything; this route checks that the caller is signed in with an ADMIN_EMAILS
+// account, then writes with the service-role key.
 const LIBRARY_PAGE_SIZE = 60;
 
 class BadRequest extends Error {}
@@ -51,8 +50,8 @@ function libraryPhotoPath(value: unknown): string {
   return value;
 }
 
-// The home page and gallery read preview images on the server and cache the result, so refresh them after changes.
-function refreshPreviewPages() {
+// The home page and gallery show the library models and cache the result, so refresh them after changes.
+function refreshModelPages() {
   revalidatePath("/");
   revalidatePath("/gallery");
 }
@@ -67,9 +66,8 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
     case "signUpload": {
       let path: string;
       if (body.kind === "library") path = `library/${randomUUID()}`;
-      else if (!isBundleSlug(body.slug)) throw new BadRequest("Unknown bundle");
-      else if (body.kind === "hero") path = `bundles/${body.slug}/hero`;
-      else path = `bundles/${body.slug}/img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      else if (body.kind === "hero" && isBundleSlug(body.slug)) path = `bundles/${body.slug}/hero`;
+      else throw new BadRequest("Unknown upload");
       const { data, error } = await supabaseAdmin.storage
         .from(PREVIEWS_BUCKET)
         .createSignedUploadUrl(path, { upsert: body.kind === "hero" });
@@ -77,58 +75,9 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
       return { path: data.path, token: data.token };
     }
 
-    // ---- Bundle preview images (home page + gallery) ----
-
-    case "insert": {
-      const { slug, path, category, sort_order } = body;
-      if (!isBundleSlug(slug) || typeof path !== "string" || !path.startsWith(`bundles/${slug}/`)) {
-        throw new BadRequest("Invalid image");
-      }
-      const { error } = await supabaseAdmin.from(PREVIEWS_TABLE).insert({
-        slug,
-        path,
-        category: text(category, "Category", { max: 80, optional: true }) ?? "Uncategorized",
-        sort_order: Number.isInteger(sort_order) ? sort_order : 0,
-      });
-      if (error) throw error;
-      refreshPreviewPages();
+    case "heroUploaded":
+      refreshModelPages();
       return {};
-    }
-
-    case "updateCategory": {
-      if (typeof body.id !== "string") throw new BadRequest("Invalid image");
-      const { error } = await supabaseAdmin
-        .from(PREVIEWS_TABLE)
-        .update({ category: text(body.category, "Category", { max: 80 }) })
-        .eq("id", body.id);
-      if (error) throw error;
-      refreshPreviewPages();
-      return {};
-    }
-
-    case "reorder": {
-      if (!Array.isArray(body.ids) || !body.ids.every((id: unknown) => typeof id === "string")) {
-        throw new BadRequest("Invalid order");
-      }
-      const results = await Promise.all(
-        body.ids.map((id: string, i: number) => supabaseAdmin.from(PREVIEWS_TABLE).update({ sort_order: i }).eq("id", id))
-      );
-      const failed = results.find((r) => r.error);
-      if (failed?.error) throw failed.error;
-      refreshPreviewPages();
-      return {};
-    }
-
-    case "delete": {
-      if (typeof body.id !== "string") throw new BadRequest("Invalid image");
-      const { data: row, error: readErr } = await supabaseAdmin.from(PREVIEWS_TABLE).select("path").eq("id", body.id).single();
-      if (readErr || !row) throw new BadRequest("Image not found");
-      await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove([row.path]);
-      const { error } = await supabaseAdmin.from(PREVIEWS_TABLE).delete().eq("id", body.id);
-      if (error) throw error;
-      refreshPreviewPages();
-      return {};
-    }
 
     // ---- Search library: models with their Drive links ----
 
@@ -187,6 +136,7 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
         await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove([previewPath]);
         throw error;
       }
+      refreshModelPages();
       return { item: data };
     }
 
@@ -219,6 +169,7 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
       if (oldPhoto && oldPhoto !== changes.preview_path) {
         await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove([oldPhoto]);
       }
+      refreshModelPages();
       return { item: data };
     }
 
@@ -229,6 +180,7 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
       if (error) throw error;
       // Photos uploaded through /admin live in Storage; imported ones are files in public/previews.
       if (row?.preview_path) await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove([row.preview_path]);
+      refreshModelPages();
       return {};
     }
 

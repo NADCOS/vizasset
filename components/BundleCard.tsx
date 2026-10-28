@@ -1,11 +1,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { BundleData } from "@/lib/bundles";
+import { LibraryCard, modelSearchUrl } from "@/lib/models";
 import { buildMessengerLink } from "@/lib/messenger";
-import { PreviewImage } from "@/lib/previewImages";
 import MessengerLink from "./MessengerLink";
 
-export default function BundleCard({ bundle, thumbs }: { bundle: BundleData; thumbs: PreviewImage[] }) {
+export default function BundleCard({
+  bundle,
+  thumbs,
+  modelCount,
+}: {
+  bundle: BundleData;
+  thumbs: LibraryCard[];
+  modelCount: number;
+}) {
   const link = buildMessengerLink(bundle);
 
   return (
@@ -51,16 +59,16 @@ export default function BundleCard({ bundle, thumbs }: { bundle: BundleData; thu
         {thumbs.length > 0 && (
           <div className="grid grid-cols-4 gap-1.5">
             {thumbs.map((t) => (
-              <div key={t.id} className="relative aspect-square overflow-hidden rounded-md bg-base-800">
-                <Image
-                  src={t.url}
-                  alt={`${t.category} model preview`}
-                  fill
-                  loading="lazy"
-                  className="object-cover"
-                  sizes="(max-width: 640px) 25vw, 110px"
-                />
-              </div>
+              <Link
+                key={t.id}
+                href={modelSearchUrl(t.id)}
+                title={t.title}
+                className="relative block aspect-square overflow-hidden rounded-md bg-base-800"
+              >
+                {/* Plain <img>: thousands of model photos would use up Vercel's image optimization quota. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={t.previewUrl} alt={t.title} loading="lazy" className="h-full w-full object-cover" />
+              </Link>
             ))}
           </div>
         )}
@@ -76,7 +84,7 @@ export default function BundleCard({ bundle, thumbs }: { bundle: BundleData; thu
           href="/gallery"
           className="inline-flex items-center justify-center text-sm font-medium text-accent no-underline hover:text-accent-dim"
         >
-          View all included models →
+          {modelCount > 0 ? `View all ${modelCount.toLocaleString()} included models →` : "View all included models →"}
         </Link>
       </div>
     </article>

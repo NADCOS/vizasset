@@ -1,5 +1,4 @@
 import { supabase, PREVIEWS_BUCKET } from "@/lib/supabaseClient";
-import type { PreviewImage } from "@/lib/previewImages";
 
 // Browser-side wrappers for /api/admin. Every call carries the signed-in admin's Supabase session.
 
@@ -38,7 +37,7 @@ export async function verifyAdmin() {
   await call("verify");
 }
 
-async function uploadFile(body: Blob, kind: "hero" | "image" | "library", slug?: string) {
+async function uploadFile(body: Blob, kind: "hero" | "library", slug?: string) {
   const { path, token } = await call<{ path: string; token: string }>("signUpload", { slug, kind });
   const { error } = await supabase.storage.from(PREVIEWS_BUCKET).uploadToSignedUrl(path, token, body, {
     contentType: body.type,
@@ -49,27 +48,12 @@ async function uploadFile(body: Blob, kind: "hero" | "image" | "library", slug?:
   return path;
 }
 
-// ---- Bundle preview images ----
+// ---- Bundle hero images ----
 
 export async function uploadHero(slug: string, file: File) {
   await uploadFile(file, "hero", slug);
-}
-
-export async function uploadImage(slug: string, file: File, category: string, sortOrder: number) {
-  const path = await uploadFile(file, "image", slug);
-  await call("insert", { slug, path, category, sort_order: sortOrder });
-}
-
-export async function updateCategory(id: string, category: string) {
-  await call("updateCategory", { id, category });
-}
-
-export async function reorderCategory(images: PreviewImage[]) {
-  await call("reorder", { ids: images.map((img) => img.id) });
-}
-
-export async function deleteImage(id: string) {
-  await call("delete", { id });
+  // The home page caches its HTML; refresh it so the new hero shows up.
+  await call("heroUploaded");
 }
 
 // ---- Search library ----

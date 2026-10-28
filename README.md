@@ -20,14 +20,17 @@ npm run dev
 
 Two tabs:
 
-- **Models & Drive links** — the search library. Drop photos, give each a title, category and Google Drive link, save. New models appear on `/search` within about a minute. Edit or delete existing ones, or hover a photo to replace it. The photo is analyzed in your browser for image search (the AI model downloads once, then the browser caches it).
-- **Bundle preview images** — the hero and the preview images on the home page and `/gallery`.
+- **Models & Drive links** — every model in the bundle. Drop photos, give each a title, category and Google Drive link, save. A model shows up everywhere at once: `/search` (within about a minute), `/gallery` and the home page thumbnails. Edit or delete existing ones, or hover a photo to replace it. The photo is analyzed in your browser for image search (the AI model downloads once, then the browser caches it).
+- **Bundle hero image** — the large image on each bundle card.
+
+Clicking a model in the gallery or on the home page opens `/search?id=<model id>`: that exact model first, then visually similar ones.
 
 ### Security model
 
 - Admins sign in with **Supabase Auth** (email + password). Only accounts whose email is in `ADMIN_EMAILS` get in; anyone else is signed out.
 - The browser only gets the public anon key. All writes go through `/api/admin`, which checks the session and the email allowlist on the server, then writes with the service-role key (`SUPABASE_SERVICE_ROLE_KEY`, server-only).
-- `library_items` has no public policies at all; the search page reads it through `/api/library`. `preview_images` is public read-only.
+- `library_items` has no public policies at all; pages read it on the server and the search page through `/api/library`.
+- The old `preview_images` table (earlier gallery images) is no longer used by the site; it's public read-only and can be dropped.
 - Download links must be Google Drive links (enforced on the server). Drive only opens them for buyers whose email you've added, so they're safe to show. Never use open links (public Drive links, Mega, direct file URLs).
 
 ## Supabase setup

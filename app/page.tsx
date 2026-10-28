@@ -6,11 +6,11 @@ import Faq from "@/components/Faq";
 import Footer from "@/components/Footer";
 import BackToTop from "@/components/BackToTop";
 import { bundles } from "@/lib/bundles";
-import { listImages } from "@/lib/previewImages";
+import { getLibraryCards } from "@/lib/library";
 import { SITE_URL } from "@/lib/site";
 
-// Preview images are read on the server and cached; /api/admin refreshes this page after
-// every change, and the hourly revalidate is only a fallback.
+// The models are read on the server and cached; /api/admin refreshes this page after every
+// change, and the hourly revalidate is only a fallback.
 export const revalidate = 3600;
 
 const THUMBS_PER_CARD = 8;
@@ -21,8 +21,8 @@ function sample<T>(items: T[], n: number): T[] {
 }
 
 export default async function Home() {
-  const imagesBySlug = await Promise.all(bundles.map((b) => listImages(b.slug)));
-  const modelCount = imagesBySlug.reduce((sum, imgs) => sum + imgs.length, 0);
+  // Every library model belongs to the all-in bundle (the only one sold today).
+  const models = await getLibraryCards();
 
   const productJsonLd = bundles.map((b) => ({
     "@context": "https://schema.org",
@@ -44,7 +44,7 @@ export default async function Home() {
     <main>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />
       <Header />
-      <Hero modelCount={modelCount} />
+      <Hero modelCount={models.length} />
       <HowItWorks />
 
       <section id="bundles" className="mx-auto max-w-7xl px-6 py-16 sm:px-10 sm:py-24">
@@ -60,8 +60,8 @@ export default async function Home() {
         </div>
 
         <div className="grid grid-cols-1 gap-7 sm:grid-cols-2 lg:grid-cols-3">
-          {bundles.map((b, i) => (
-            <BundleCard key={b.slug} bundle={b} thumbs={sample(imagesBySlug[i], THUMBS_PER_CARD)} />
+          {bundles.map((b) => (
+            <BundleCard key={b.slug} bundle={b} modelCount={models.length} thumbs={sample(models, THUMBS_PER_CARD)} />
           ))}
         </div>
       </section>
