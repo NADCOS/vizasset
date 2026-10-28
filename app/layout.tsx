@@ -1,10 +1,27 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/react";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
+const TITLE = "VizAssets — Pro-Grade 3D Model Bundles for Architectural Visualizers";
+const DESCRIPTION =
+  "Curated 3ds Max model bundles for architectural visualizers. No accounts, no cart — message us on Facebook and pay via GCash.";
+
 export const metadata: Metadata = {
-  title: "VizAssets — Pro-Grade 3D Model Bundles for Architectural Visualizers",
-  description:
-    "Curated SketchUp and 3ds Max model bundles for architectural visualizers. No accounts, no cart — message us on Facebook and pay via GCash.",
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: "/" },
+  // Shown when the link is shared on Facebook/Messenger.
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "VizAssets",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [{ url: "/images/hero-vray.jpg", alt: "Photorealistic V-Ray architectural render" }],
+  },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: ["/images/hero-vray.jpg"] },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -23,7 +40,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&display=swap"
         />
       </head>
-      <body className="bg-base-950 text-base-200 font-sans">{children}</body>
+      <body className="bg-base-950 text-base-200 font-sans">
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }

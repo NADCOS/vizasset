@@ -1,6 +1,6 @@
 # VizAssets
 
-Next.js catalog site for bulk SketchUp/3ds Max model bundles. Manual GCash checkout via Facebook Messenger deep links — no cart, no accounts.
+Next.js catalog site for bulk 3ds Max model bundles. Manual GCash checkout via Facebook Messenger deep links — no cart, no accounts. Buyers send their Google email in the chat and get access to the private Google Drive folder after paying.
 
 ## Setup
 
@@ -12,24 +12,29 @@ npm run dev
 ## Before deploying
 
 - Messenger page id is set in `lib/messenger.ts` (`PAGE_ID`).
-- Bundle content/pricing lives in `lib/bundles.ts`.
-- Preview images (hero + thumbnails) are managed at `/admin`, not committed as files — see below.
+- Bundle content/pricing lives in `lib/bundles.ts` (`price` / `originalPrice` in PHP; the labels, hero badge and product data are derived from them).
+- The site URL used for SEO (sitemap, link previews) is in `lib/site.ts`.
+- Models, Drive links and preview images are managed at `/admin`, not committed as files — see below.
 
-## Preview image uploads (Supabase)
+## Admin (`/admin`)
 
-Bundle preview images live in Supabase Storage and get uploaded from `/admin`, no redeploy needed.
+Two tabs:
 
-1. Create a free project at supabase.com.
-2. Storage → New bucket → name it `previews`, mark it **Public**.
-3. Storage → `previews` → Policies → add a policy allowing `insert`/`update` for the `anon` role (needed for uploads from `/admin`; fine since the bucket only holds preview images).
-4. Project Settings → API → copy the Project URL and `anon` public key.
-5. Copy `.env.local.example` to `.env.local` and fill in `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and pick an `NEXT_PUBLIC_ADMIN_PASSCODE`.
-6. Add the same three variables in Vercel → Project → Settings → Environment Variables, then redeploy.
-7. Visit `yoursite.com/admin`, enter the passcode, and upload each bundle's hero + thumbnail images.
+- **Models & Drive links** — the search library. Drop photos, give each a title, category and Google Drive link, save. New models appear on `/search` within about a minute. Edit or delete existing ones, or hover a photo to replace it. The photo is analyzed in your browser for image search (the AI model downloads once, then the browser caches it).
+- **Bundle preview images** — the hero and the preview images on the home page and `/gallery`.
 
-## Categories, ordering & search
+### Security model
 
-Preview images have categories and a manual sort order, stored in a Supabase table (not just Storage). Create it once via Supabase → SQL Editor → New query:
+- Admins sign in with **Supabase Auth** (email + password). Only accounts whose email is in `ADMIN_EMAILS` get in; anyone else is signed out.
+- The browser only gets the public anon key. All writes go through `/api/admin`, which checks the session and the email allowlist on the server, then writes with the service-role key (`SUPABASE_SERVICE_ROLE_KEY`, server-only).
+- `library_items` has no public policies at all; the search page reads it through `/api/library`. `preview_images` is public read-only.
+- Download links must be Google Drive links (enforced on the server). Drive only opens them for buyers whose email you've added, so they're safe to show. Never use open links (public Drive links, Mega, direct file URLs).
+
+## Supabase setup
+
+1. Create a project at supabase.com.
+2. Storage → New bucket → `previews`, mark it **Public**. Add no `anon` insert/update/delete policies.
+3. SQL Editor → New query, run:
 
 ```sql
 create table if not exists preview_images (
@@ -41,20 +46,53 @@ create table if not exists preview_images (
   created_at timestamptz not null default now()
 );
 alter table preview_images enable row level security;
+drop policy if exists "public read" on preview_images;
 create policy "public read" on preview_images for select using (true);
-create policy "anon insert" on preview_images for insert with check (true);
-create policy "anon update" on preview_images for update using (true);
-create policy "anon delete" on preview_images for delete using (true);
+-- Older setups let the anon key write; remove that.
+drop policy if exists "anon insert" on preview_images;
+drop policy if exists "anon update" on preview_images;
+drop policy if exists "anon delete" on preview_images;
+
+create table if not exists library_items (
+  id text primary key,
+  title text not null,
+  category text not null default 'Uncategorized',
+  subcategory text,
+  preview_url text not null,
+  preview_path text,          -- set for photos uploaded in /admin (Supabase Storage)
+  download_url text not null,
+  embedding text not null,    -- base64 CLIP embedding, see lib/embedding.ts
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists library_items_updated_at on library_items (updated_at desc);
+alter table library_items enable row level security;
+-- No policies on purpose: only the server (service role) can read or write it.
 ```
 
-On `/admin`, switch the active category tab (or type a new one + Add) before uploading — bulk uploads land in that category. Drag tiles to reorder within a category, or use the per-image dropdown to move it to another category. `/gallery` shows everything grouped by category with a search box that filters the category list.
+4. Storage → `previews` → Policies: delete any `insert`/`update`/`delete` policies for `anon` from older setups.
+5. Authentication → Users → **Add user** → create your admin account (email + password, tick "Auto confirm"). Then Authentication → Sign In / Providers → turn off **Allow new users to sign up**.
+6. Project Settings → API: copy the Project URL, the `anon` key and the `service_role` key.
+7. Copy `.env.local.example` to `.env.local` and fill in `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` and `ADMIN_EMAILS`.
+8. Add the same four variables in Vercel → Project → Settings → Environment Variables. Delete `ADMIN_PASSCODE` / `NEXT_PUBLIC_ADMIN_PASSCODE` if they're still there.
 
-Note: the passcode is a soft deterrent only (it ships in client JS, like any `NEXT_PUBLIC_*` variable) — it stops casual visitors from finding the page, not a determined one. Fine for a low-stakes internal tool; don't rely on it to gate anything sensitive.
+### Moving the existing library in (one time)
 
-## Build (static export)
+```
+npm run import-library -- --dry   # shows what would be imported and what's skipped
+npm run import-library
+```
+
+This copies `public/indexedLibrary.json` into `library_items` (items without a real Drive link are skipped and listed) and sets upload limits on the `previews` bucket (images only, 10 MB). Imported photos keep being served from `public/previews`. Until the table has rows, `/search` falls back to `public/indexedLibrary.json`; once imported and checked, that file can be deleted. `scripts/libraryAdmin.mjs`, `syncFolder.mjs` and `generateIndex.mjs` only edit the old file — use `/admin` instead.
+
+## Analytics
+
+`@vercel/analytics` is included. Enable Web Analytics in Vercel → Project → Analytics. Messenger button clicks are tracked as the custom event `messenger_click`, with a `location` property (`header`, `bundle_card`).
+
+## Build
 
 ```
 npm run build
 ```
 
-Outputs a static site in `out/` (via `output: "export"` in `next.config.ts`) — deployable to Vercel, Netlify, or any static host.
+Deploys to Vercel as a regular Next.js app (it needs the server for `/api/admin`, `/api/library` and page caching, so it is not a static export).

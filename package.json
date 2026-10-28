@@ -9,14 +9,16 @@
     "lint": "next lint",
     "index-images": "node scripts/generateIndex.mjs",
     "library-admin": "node scripts/libraryAdmin.mjs",
-    "sync": "node scripts/syncFolder.mjs"
+    "sync": "node scripts/syncFolder.mjs",
+    "import-library": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/importLibrary.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.1",
     "@supabase/supabase-js": "^2.45.0",
+    "@vercel/analytics": "^1.6.1",
     "framer-motion": "^14.6.0",
     "lucide-react": "^1.62.0",
-    "next": "14.2.5",
+    "next": "^14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

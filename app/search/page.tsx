@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import ReverseImageSearch from "@/src/components/ReverseImageSearch";
 import BackToTop from "@/components/BackToTop";
+
+export const metadata: Metadata = {
+  title: "Search the Library — VizAssets",
+  description: "Search thousands of 3ds Max models by name, or drop in a reference image to find visually similar assets.",
+  alternates: { canonical: "/search" },
+};
 
 export default function SearchPage() {
   return (

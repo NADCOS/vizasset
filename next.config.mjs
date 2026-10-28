@@ -5,6 +5,21 @@ const nextConfig = {
       { protocol: "https", hostname: "*.supabase.co", pathname: "/storage/v1/object/public/**" },
     ],
   },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // No other site may frame these pages (stops clickjacking on /admin).
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+      { source: "/admin", headers: [{ key: "Cache-Control", value: "no-store" }] },
+    ];
+  },
   experimental: {
     // Load transformers.js and its Node-only native deps with require() on the server instead of
     // bundling them; webpack can't resolve the ONNX .wasm files referenced by the Node build.

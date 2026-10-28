@@ -3,6 +3,7 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { takePendingImage } from "../lib/pendingImage";
+import { decodeEmbedding } from "@/lib/embedding";
 import {
   AlertTriangle,
   Camera,
@@ -17,7 +18,9 @@ import {
   X,
 } from "lucide-react";
 
-const LIBRARY_URL = "/indexedLibrary.json";
+// The live library managed in /admin. Until it has been imported, fall back to the static index.
+const LIBRARY_URL = "/api/library";
+const FALLBACK_LIBRARY_URL = "/indexedLibrary.json";
 const MIN_SCORE_RANGE = [40, 95];
 const DEFAULT_MIN_SCORE = 60;
 const ALL_CATEGORIES = "All";
@@ -66,6 +69,26 @@ function FilterSelect({ label, value, onChange, children }) {
       </select>
     </label>
   );
+}
+
+// The API sends embeddings encoded as base64 strings; the static index has plain number arrays.
+function withDecodedEmbeddings(items) {
+  return items
+    .map((item) => ({
+      ...item,
+      embedding: typeof item.embedding === "string" ? decodeEmbedding(item.embedding) : item.embedding,
+    }))
+    .filter((item) => item.embedding && item.embedding.length > 0);
+}
+
+async function fetchLibrary(signal) {
+  const res = await fetch(LIBRARY_URL, { signal });
+  const items = res.ok ? await res.json() : [];
+  if (items.length > 0) return items;
+  // no-cache: reuse the browser's copy of this large file, but check with the server first.
+  const fallback = await fetch(FALLBACK_LIBRARY_URL, { signal, cache: "no-cache" });
+  if (!fallback.ok) throw new Error(`Could not load library (${fallback.status})`);
+  return fallback.json();
 }
 
 // Both vectors are L2-normalized, so the dot product is the cosine similarity.
@@ -176,8 +199,9 @@ const ResultCard = forwardRef(function ResultCard({ item }, ref) {
           className="mt-auto inline-flex items-center justify-center gap-2 rounded-lg bg-accent py-2.5 text-sm font-semibold text-accent-fg no-underline transition-colors hover:bg-accent-dim hover:text-accent-fg"
         >
           <Download className="h-4 w-4" />
-          Download File
+          Open in Google Drive
         </a>
+        <span className="-mt-2 text-center text-xs text-base-400">Buyers only: sign in with the email you gave us</span>
       </div>
     </motion.article>
   );
@@ -208,15 +232,8 @@ export default function ReverseImageSearch() {
   // Load the pre-computed library index.
   useEffect(() => {
     const controller = new AbortController();
-    // no-store: the index is rewritten by the library admin while the site is running.
-    fetch(LIBRARY_URL, { signal: controller.signal, cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`Could not load library (${res.status})`);
-        return res.json();
-      })
-      .then((items) => {
-        setLibrary(items.filter((item) => Array.isArray(item.embedding) && item.embedding.length > 0));
-      })
+    fetchLibrary(controller.signal)
+      .then((items) => setLibrary(withDecodedEmbeddings(items)))
       .catch((err) => {
         if (err.name !== "AbortError") setLibraryError(err.message);
       });
@@ -431,7 +448,8 @@ export default function ReverseImageSearch() {
         <h2 className="text-2xl font-semibold">Search the Library</h2>
         <p className="text-sm text-base-400">
           Search by name, or drop a render, screenshot or reference photo to find visually similar assets. Images are
-          analyzed in your browser and never uploaded.
+          analyzed in your browser and never uploaded. Drive links open for buyers whose Google email we&apos;ve added
+          after payment.
         </p>
       </header>
 
@@ -620,7 +638,7 @@ export default function ReverseImageSearch() {
       {showResults && matches.length === 0 && (
         <p className="rounded-lg border border-base-700 bg-base-900 px-4 py-6 text-center text-sm text-base-400">
           {library.length === 0
-            ? "The library index is empty. Run npm run index-images to build it."
+            ? "The library is empty."
             : queryEmbedding
               ? `No matches above ${minScore}%${hasTextQuery ? ` for "${textQuery.trim()}"` : ""}${category !== ALL_CATEGORIES ? ` in ${category}` : ""}. Try lowering the minimum score${hasTextQuery ? " or clearing the search box" : ""}.`
               : `No models named "${textQuery.trim()}"${category !== ALL_CATEGORIES ? ` in ${category}` : ""}. Try a shorter word or another category.`}

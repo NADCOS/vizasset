@@ -1,10 +1,11 @@
 import Link from "next/link";
 import Logo from "./Logo";
 import HeaderSearch from "./HeaderSearch";
-import { buildMessengerLink } from "@/lib/messenger";
+import MessengerLink from "./MessengerLink";
+import { buildContactLink } from "@/lib/messenger";
 
 export default function Header() {
-  const link = buildMessengerLink({ slug: "catalog", name: "catalog", priceLabel: "the listed price" });
+  const link = buildContactLink();
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-base-700 bg-base-950/85 px-4 py-4 backdrop-blur sm:gap-7 sm:px-10">
@@ -23,14 +24,13 @@ export default function Header() {
         <a href="#faq" className="hidden text-base-400 no-underline hover:text-base-200 sm:inline">
           FAQ
         </a>
-        <a
+        <MessengerLink
           href={link}
-          target="_blank"
-          rel="noopener noreferrer"
+          location="header"
           className="whitespace-nowrap rounded-lg bg-accent px-4.5 py-2 font-semibold text-accent-fg no-underline hover:bg-accent-dim"
         >
           Message Us
-        </a>
+        </MessengerLink>
       </nav>
     </header>
   );

@@ -1,6 +1,9 @@
 export interface BundleData {
   slug: string;
   name: string;
+  // Prices in PHP. priceLabel / originalPriceLabel are derived from these.
+  price: number;
+  originalPrice?: number;
   priceLabel: string;
   originalPriceLabel?: string;
   badge?: string;
@@ -19,12 +22,16 @@ export function previewUrl(path: string): string {
   return `${supabaseUrl}/storage/v1/object/public/previews/${path}`;
 }
 
-const RAW_BUNDLES: Omit<BundleData, "heroImage">[] = [
+export function formatPeso(amount: number): string {
+  return `₱${amount.toLocaleString("en-PH")}`;
+}
+
+const RAW_BUNDLES: Omit<BundleData, "heroImage" | "priceLabel" | "originalPriceLabel">[] = [
   {
     slug: "all-in-3ds-max",
     name: "All-In 3ds Max Models",
-    priceLabel: "₱299",
-    originalPriceLabel: "₱1,999",
+    price: 299,
+    originalPrice: 1999,
     badge: "On Sale",
     format: "3ds Max",
     highlights: [
@@ -38,6 +45,8 @@ const RAW_BUNDLES: Omit<BundleData, "heroImage">[] = [
 
 export const bundles: BundleData[] = RAW_BUNDLES.map((b) => ({
   ...b,
+  priceLabel: formatPeso(b.price),
+  originalPriceLabel: b.originalPrice ? formatPeso(b.originalPrice) : undefined,
   heroImage: previewUrl(`bundles/${b.slug}/hero`),
 }));
 
@@ -56,7 +65,11 @@ export const faqs = [
   },
   {
     q: "How do I get the files after paying?",
-    a: "Once payment is confirmed, we send a secure cloud download link directly in the same Messenger chat.",
+    a: "Send us the Google account email you want to use. Once payment is confirmed, we give that email access to the private Google Drive folder, so you can download every model straight from Drive.",
+  },
+  {
+    q: "Why does a download link ask me to request access?",
+    a: "The files are private and only open for buyers whose Google email has been added. If you've paid and still see a request-access page, make sure you're signed in to Google with the email you gave us, or message us to update it.",
   },
   {
     q: "Can I use these in commercial projects?",

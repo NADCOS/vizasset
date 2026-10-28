@@ -1,25 +1,12 @@
-"use client";
-
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import Link from "next/link";
 import { BundleData } from "@/lib/bundles";
 import { buildMessengerLink } from "@/lib/messenger";
-import { listImages, PreviewImage } from "@/lib/previewImages";
+import { PreviewImage } from "@/lib/previewImages";
+import MessengerLink from "./MessengerLink";
 
-export default function BundleCard({ bundle }: { bundle: BundleData }) {
+export default function BundleCard({ bundle, thumbs }: { bundle: BundleData; thumbs: PreviewImage[] }) {
   const link = buildMessengerLink(bundle);
-  const [thumbs, setThumbs] = useState<PreviewImage[]>([]);
-
-  useEffect(() => {
-    listImages(bundle.slug).then((all) => {
-      if (all.length <= 8) {
-        setThumbs(all);
-        return;
-      }
-      const shuffled = [...all].sort(() => Math.random() - 0.5);
-      setThumbs(shuffled.slice(0, 8));
-    });
-  }, [bundle.slug]);
 
   return (
     <article className="flex flex-col overflow-hidden rounded-xl2 border border-base-700 bg-base-900 shadow-card">
@@ -67,7 +54,7 @@ export default function BundleCard({ bundle }: { bundle: BundleData }) {
               <div key={t.id} className="relative aspect-square overflow-hidden rounded-md bg-base-800">
                 <Image
                   src={t.url}
-                  alt="Asset preview"
+                  alt={`${t.category} model preview`}
                   fill
                   loading="lazy"
                   className="object-cover"
@@ -78,20 +65,19 @@ export default function BundleCard({ bundle }: { bundle: BundleData }) {
           </div>
         )}
 
-        <a
+        <MessengerLink
           href={link}
-          target="_blank"
-          rel="noopener noreferrer"
+          location="bundle_card"
           className="mt-auto inline-flex items-center justify-center rounded-lg border border-base-600 py-2.5 text-sm font-medium text-base-200 no-underline hover:border-accent hover:text-accent"
         >
           Purchase via GCash (Messenger)
-        </a>
-        <a
+        </MessengerLink>
+        <Link
           href="/gallery"
           className="inline-flex items-center justify-center text-sm font-medium text-accent no-underline hover:text-accent-dim"
         >
           View all included models →
-        </a>
+        </Link>
       </div>
     </article>
   );
