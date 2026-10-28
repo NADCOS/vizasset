@@ -59,6 +59,57 @@ export async function uploadHero(slug: string, file: File) {
   await call("heroUploaded");
 }
 
+// ---- Orders ----
+
+export const ORDER_STATUSES = [
+  { id: "pending", label: "Waiting for payment" },
+  { id: "paid", label: "Paid — share Drive" },
+  { id: "access_granted", label: "Access granted" },
+  { id: "cancelled", label: "Cancelled" },
+] as const;
+export type OrderStatus = (typeof ORDER_STATUSES)[number]["id"];
+
+export interface Order {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  customer_name: string;
+  google_email: string;
+  bundle_slug: string;
+  amount: number;
+  status: OrderStatus;
+  gcash_reference: string | null;
+  notes: string | null;
+}
+
+export interface OrderFields {
+  customerName: string;
+  googleEmail: string;
+  bundleSlug: string;
+  amount: string;
+  status: OrderStatus;
+  gcashReference: string;
+  notes: string;
+}
+
+export function listOrders(params: { status?: OrderStatus; q?: string }) {
+  return call<{ orders: Order[]; counts: Record<OrderStatus, number>; limit: number }>("ordersList", params);
+}
+
+export async function createOrder(fields: OrderFields) {
+  const { order } = await call<{ order: Order }>("orderCreate", { ...fields });
+  return order;
+}
+
+export async function updateOrder(id: string, fields: Partial<OrderFields>) {
+  const { order } = await call<{ order: Order }>("orderUpdate", { id, ...fields });
+  return order;
+}
+
+export async function deleteOrder(id: string) {
+  await call("orderDelete", { id });
+}
+
 // ---- Search library ----
 
 export function listLibrary(params: { q?: string; category?: string; missingLink?: boolean; offset?: number }) {

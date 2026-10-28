@@ -7,6 +7,7 @@ import { decodeEmbedding } from "@/lib/embedding";
 import { indexItem, parseQuery, rankByText } from "../lib/textSearch";
 import QuickView from "@/components/QuickView";
 import Thumb from "@/components/Thumb";
+import ShortlistButton from "@/components/ShortlistButton";
 
 const SIMILAR_IN_QUICK_VIEW = 6;
 import {
@@ -26,7 +27,6 @@ import {
 
 // The live library managed in /admin. Until it has been imported, fall back to the static index.
 const LIBRARY_URL = "/api/library";
-const FALLBACK_LIBRARY_URL = "/indexedLibrary.json";
 const MIN_SCORE_RANGE = [40, 95];
 const DEFAULT_MIN_SCORE = 60;
 const ALL_CATEGORIES = "All";
@@ -73,12 +73,8 @@ function prepareLibrary(items) {
 
 async function fetchLibrary(signal) {
   const res = await fetch(LIBRARY_URL, { signal });
-  const items = res.ok ? await res.json() : [];
-  if (items.length > 0) return items;
-  // no-cache: reuse the browser's copy of this large file, but check with the server first.
-  const fallback = await fetch(FALLBACK_LIBRARY_URL, { signal, cache: "no-cache" });
-  if (!fallback.ok) throw new Error(`Could not load library (${fallback.status})`);
-  return fallback.json();
+  if (!res.ok) throw new Error(`Could not load the library (${res.status}). Please refresh the page.`);
+  return res.json();
 }
 
 // Both vectors are L2-normalized, so the dot product is the cosine similarity.
@@ -162,7 +158,7 @@ const ResultCard = forwardRef(function ResultCard({ item, onOpen }, ref) {
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="flex flex-col overflow-hidden rounded-xl2 border border-base-700 bg-base-900 shadow-card"
+      className="relative flex flex-col overflow-hidden rounded-xl2 border border-base-700 bg-base-900 shadow-card"
     >
       <button
         type="button"
@@ -186,6 +182,8 @@ const ResultCard = forwardRef(function ResultCard({ item, onOpen }, ref) {
           </span>
         )}
       </button>
+      {/* A sibling of the photo button, not inside it: buttons can't be nested. */}
+      <ShortlistButton item={item} className="absolute left-3 top-3" />
       <div className="flex flex-1 flex-col gap-4 p-5">
         <div className="flex flex-col gap-1">
           <span className="text-xs font-medium uppercase tracking-wide text-base-400">
@@ -788,6 +786,7 @@ export default function ReverseImageSearch() {
                 Open in Google Drive
               </a>
               <span className="text-center text-xs text-base-400">Buyers only: sign in with the email you gave us</span>
+              <ShortlistButton item={quickItem} variant="full" />
             </>
           )
         }

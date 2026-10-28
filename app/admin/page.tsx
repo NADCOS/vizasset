@@ -7,9 +7,11 @@ import { supabase, supabaseConfigured } from "@/lib/supabaseClient";
 import { verifyAdmin } from "@/lib/adminApi";
 import LibraryManager from "@/components/admin/LibraryManager";
 import BundleHeroes from "@/components/admin/BundleHeroes";
+import OrdersManager from "@/components/admin/OrdersManager";
 
 const TABS = [
   { id: "library", label: "Models & Drive links" },
+  { id: "orders", label: "Orders" },
   { id: "heroes", label: "Bundle hero image" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
@@ -144,7 +146,7 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {tab === "library" ? <LibraryManager /> : <BundleHeroes />}
+        {tab === "library" ? <LibraryManager /> : tab === "orders" ? <OrdersManager /> : <BundleHeroes />}
       </div>
     </main>
   );

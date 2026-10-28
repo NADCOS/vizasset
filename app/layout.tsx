@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/react";
 import { SITE_URL } from "@/lib/site";
+import ShortlistDock from "@/components/ShortlistDock";
 import "./globals.css";
 
 const TITLE = "VizAssets — Pro-Grade 3D Model Bundles for Architectural Visualizers";
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="bg-base-950 text-base-200 font-sans">
         {children}
+        <ShortlistDock />
         <Analytics />
       </body>
     </html>

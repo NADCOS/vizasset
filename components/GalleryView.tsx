@@ -6,6 +6,7 @@ import { LibraryCard, modelSearchUrl } from "@/lib/models";
 import { loadLibraryNames } from "@/lib/libraryNames";
 import MessengerLink from "./MessengerLink";
 import QuickView from "./QuickView";
+import ShortlistButton from "./ShortlistButton";
 import Thumb from "./Thumb";
 
 const PAGE_SIZE = 60;
@@ -15,25 +16,29 @@ const chip = (active: boolean) =>
 
 function Tile({ model, onOpen }: { model: LibraryCard; onOpen: (m: LibraryCard) => void }) {
   return (
-    // A real link (works in a new tab and without scripts); a plain click opens the quick view.
-    <a
-      href={modelSearchUrl(model.id)}
-      title={model.title}
-      onClick={(e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-        e.preventDefault();
-        onOpen(model);
-      }}
-      className="group relative block aspect-square overflow-hidden rounded-lg bg-base-800 no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-    >
-      <Thumb src={model.previewUrl} alt={model.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
-      <span className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-0.5 bg-base-950/85 px-2 py-2 text-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-        <span className="line-clamp-2 text-xs font-medium text-base-200">{model.title}</span>
-        <span className="flex items-center gap-1 text-[11px] font-semibold text-accent">
-          <Maximize2 className="h-3 w-3" /> Quick view
+    <div className="group relative">
+      {/* A real link (works in a new tab and without scripts); a plain click opens the quick view. */}
+      <a
+        href={modelSearchUrl(model.id)}
+        title={model.title}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          onOpen(model);
+        }}
+        className="relative block aspect-square overflow-hidden rounded-lg bg-base-800 no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        <Thumb src={model.previewUrl} alt={model.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+        <span className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-0.5 bg-base-950/85 px-2 py-2 text-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <span className="line-clamp-2 text-xs font-medium text-base-200">{model.title}</span>
+          <span className="flex items-center gap-1 text-[11px] font-semibold text-accent">
+            <Maximize2 className="h-3 w-3" /> Quick view
+          </span>
         </span>
-      </span>
-    </a>
+      </a>
+      {/* A sibling of the link, not inside it: buttons can't be nested in links. */}
+      <ShortlistButton item={model} className="absolute right-1.5 top-1.5" />
+    </div>
   );
 }
 
@@ -220,6 +225,7 @@ export default function GalleryView({
               >
                 Get the bundle — {buy.priceLabel}
               </MessengerLink>
+              <ShortlistButton item={open} variant="full" />
               <a
                 href={modelSearchUrl(open.id)}
                 className="inline-flex items-center justify-center rounded-lg border border-base-600 px-5 py-2.5 text-sm font-medium text-base-200 no-underline hover:border-accent hover:text-accent"

@@ -52,6 +52,30 @@ function embedding(value: unknown): string {
   return value;
 }
 
+const ORDERS_TABLE = "orders";
+const ORDER_COLUMNS = "id,created_at,updated_at,customer_name,google_email,bundle_slug,amount,status,gcash_reference,notes";
+const ORDER_STATUSES = ["pending", "paid", "access_granted", "cancelled"];
+// Newest first; plenty for a manual GCash shop. Older orders stay in the table.
+const ORDERS_LIMIT = 300;
+
+function googleEmail(value: unknown): string {
+  const email = text(value, "Google email", { max: 254 })!.toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequest("That doesn't look like an email address");
+  return email;
+}
+
+function amount(value: unknown, fallback: number): number {
+  if (value === undefined || value === null || value === "") return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0 || n > 1_000_000) throw new BadRequest("Invalid amount");
+  return Math.round(n * 100) / 100;
+}
+
+function orderStatus(value: unknown): string {
+  if (typeof value !== "string" || !ORDER_STATUSES.includes(value)) throw new BadRequest("Invalid status");
+  return value;
+}
+
 // Each uploaded photo has a small copy next to it (see thumbUrl in lib/models.ts).
 const thumbPath = (photoPath: string) => `${photoPath}-t`;
 const withThumb = (photoPath: string) => [photoPath, thumbPath(photoPath)];
@@ -195,6 +219,74 @@ async function handle(action: string, body: Record<string, any>): Promise<Record
       // Photos uploaded through /admin live in Storage; imported ones are files in public/previews.
       if (row?.preview_path) await supabaseAdmin.storage.from(PREVIEWS_BUCKET).remove(withThumb(row.preview_path));
       refreshModelPages();
+      return {};
+    }
+
+    // ---- Orders: buyers, their Google email for Drive access, and payment status ----
+
+    case "ordersList": {
+      let query = supabaseAdmin
+        .from(ORDERS_TABLE)
+        .select(ORDER_COLUMNS)
+        .order("created_at", { ascending: false })
+        .limit(ORDERS_LIMIT);
+      if (typeof body.status === "string" && ORDER_STATUSES.includes(body.status)) query = query.eq("status", body.status);
+      // Commas and parentheses would break the or() filter syntax, so they're dropped from the search text.
+      const q = text(body.q, "Search", { optional: true })?.replace(/[,()*%\\]/g, " ").trim();
+      if (q) query = query.or(`customer_name.ilike.%${q}%,google_email.ilike.%${q}%,gcash_reference.ilike.%${q}%`);
+      const [{ data, error }, { data: all, error: countErr }] = await Promise.all([
+        query,
+        supabaseAdmin.from(ORDERS_TABLE).select("status"),
+      ]);
+      if (error) throw error;
+      if (countErr) throw countErr;
+      const counts: Record<string, number> = Object.fromEntries(ORDER_STATUSES.map((s) => [s, 0]));
+      for (const r of all ?? []) counts[r.status] = (counts[r.status] ?? 0) + 1;
+      return { orders: data ?? [], counts, limit: ORDERS_LIMIT };
+    }
+
+    case "orderCreate": {
+      const bundle = bundles.find((b) => b.slug === body.bundleSlug) ?? bundles[0];
+      const { data, error } = await supabaseAdmin
+        .from(ORDERS_TABLE)
+        .insert({
+          customer_name: text(body.customerName, "Name", { max: 120 }),
+          google_email: googleEmail(body.googleEmail),
+          bundle_slug: bundle.slug,
+          amount: amount(body.amount, bundle.price),
+          status: orderStatus(body.status ?? "pending"),
+          gcash_reference: text(body.gcashReference, "GCash reference", { max: 80, optional: true }),
+          notes: text(body.notes, "Notes", { max: 1000, optional: true }),
+        })
+        .select(ORDER_COLUMNS)
+        .single();
+      if (error) throw error;
+      return { order: data };
+    }
+
+    case "orderUpdate": {
+      if (typeof body.id !== "string") throw new BadRequest("Invalid order");
+      const changes: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if ("customerName" in body) changes.customer_name = text(body.customerName, "Name", { max: 120 });
+      if ("googleEmail" in body) changes.google_email = googleEmail(body.googleEmail);
+      if ("amount" in body) changes.amount = amount(body.amount, 0);
+      if ("status" in body) changes.status = orderStatus(body.status);
+      if ("gcashReference" in body) changes.gcash_reference = text(body.gcashReference, "GCash reference", { max: 80, optional: true });
+      if ("notes" in body) changes.notes = text(body.notes, "Notes", { max: 1000, optional: true });
+      const { data, error } = await supabaseAdmin
+        .from(ORDERS_TABLE)
+        .update(changes)
+        .eq("id", body.id)
+        .select(ORDER_COLUMNS)
+        .single();
+      if (error) throw error;
+      return { order: data };
+    }
+
+    case "orderDelete": {
+      if (typeof body.id !== "string") throw new BadRequest("Invalid order");
+      const { error } = await supabaseAdmin.from(ORDERS_TABLE).delete().eq("id", body.id);
+      if (error) throw error;
       return {};
     }
 
